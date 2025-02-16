@@ -65,7 +65,7 @@ for int i in range(0,5):
     if wasSuccessful:
         success_count += 1
 
-// success_count should be 5
+# success_count should be 5
 ```
 
 ### Example 4: Fail on unexpected or "bad" responses
@@ -85,7 +85,7 @@ process_obj = RunProcess(cmd = f"ping {bad_ip_addr} && sleep 100",
 
 wasSuccessful, traces, remaining_resp = process_obj.start()
 
-// wasSuccessful should be false immediately (i.e. before sleep 100)
+# wasSuccessful should be false immediately (i.e. before sleep 100)
 ```
 
 ### Example 5: Timeout
@@ -96,7 +96,7 @@ Processes that run too long will be killed unsuccessfully.
 wasSuccessful, \_ = RunProcess( cmd = f"sleep 1000",
                           timeout_ms = 2500).start()
 
-// will return after 2.5 seconds. wasSuccessful should be false
+# will return after 2.5 seconds. wasSuccessful should be false
 ```
 
 ### Example 6: Accumulated traces will return everything from stdout
@@ -107,9 +107,9 @@ By default, just the last matching trace from stdout will be returned
 \_, traces,\_ = RunProcess( cmd = f"echo foo && echo bar",
                                       run_to_completion = True ).start()
 
-//traces should be 2 lines:
-//foo
-//bar
+#traces should be 2 lines:
+#foo
+#bar
 ```
 
 
