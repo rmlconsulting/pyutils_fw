@@ -93,7 +93,7 @@ wasSuccessful, traces, remaining_resp = process_obj.start()
 Processes that run too long will be killed unsuccessfully.
 
 ```Python
-wasSuccessful, \_ = RunProcess( cmd = f"sleep 1000",
+wasSuccessful, _ = RunProcess( cmd = f"sleep 1000",
                           timeout_ms = 2500).start()
 
 # will return after 2.5 seconds. wasSuccessful should be false
@@ -104,7 +104,7 @@ wasSuccessful, \_ = RunProcess( cmd = f"sleep 1000",
 By default, just the last matching trace from stdout will be returned
 
 ```Python
-\_, traces,\_ = RunProcess( cmd = f"echo foo && echo bar",
+wasSuccessful, traces,_ = RunProcess( cmd = f"echo foo && echo bar",
                                       run_to_completion = True ).start()
 
 #traces should be 2 lines:
