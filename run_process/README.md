@@ -32,9 +32,6 @@ timeouts and the cleanup of subprocesses that the command may have spawned
 * <strong>timeout_ms</strong> (optional. deafult=10000)-  max process runtime. 0 == no timeout. if the process does not complete by the given time, fail and return.
 * <strong>run_to_completion</strong> (optional. default=False) - run till process completion? Useful if you do not care about the output but you do want the process to run. e.g. "kill 12345"
 * <strong>accumulate_traces</strong> (optional. default=False) - should we return everything printed to stdout? by default we only return the last stdout trace we received.
-# for stability: time to wait after cmd completion before
-# killing the process. helpful when interacting with
-# systems or hardware that need recovery
 * <strong>cmd_recovery_time_ms</strong> (optional. default=0) - after we complete the desired cmd processing, how long should we wait before tearing down processes and subprocesses. this can be helpful with some larger complexity software services or using hardware programmers that may require some recovery before disconnect for stability purposes.
 * <strong>return_on_first_match</strong> (optional. default=False) - return on any found resp_req instead of waiting for all of resp_req.
 * <strong>quiet</strong> (optional. default=False) - cmd processes stdout is intercepted. should we also print it to our stdout?
