@@ -100,14 +100,12 @@ Processes that create bad responses will fail and return immediately
 
 ```Python
 bad_ip_addr = "1921234.168.1.100"
-expected_response = f"%d bytes from {bad_ip_addr}"
 
 avoided_responses = ["Unknown host", "Request timeout"]
 
 process_obj = RunProcess(cmd = f"ping {bad_ip_addr} && sleep 100",
-                         resp_req = expected_response,
-                         resp_avoid = "Request timeout")
-
+                         resp_req = f"%d bytes from {bad_ip_addr}",
+                         resp_avoid = avoided_responses)
 
 wasSuccessful, traces, remaining_resp = process_obj.start()
 
@@ -134,16 +132,15 @@ wasSuccessful, traces,_ = RunProcess( cmd = f"echo foo && echo bar",
                                       run_to_completion = True,
                                       accumulate_traces=True ).start()
 
-#traces should be 2 lines:
-#foo
-#bar
+# traces should be 2 lines now:
+# foo
+# bar
 ```
-
 
 ### Example 7: Testing script via command line
 
 Instead of calling RunProcess programmatically, you can run it standalone to
-test
+test parameters, etc
 
 ```Bash
 > python ./run_process -c "echo foo && echo bar && echo baz" -r foo,baz

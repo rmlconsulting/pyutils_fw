@@ -303,7 +303,7 @@ def csv_to_list(csv_str):
 
 def process_cli_args():
     """ process command line args """
-    parser = argparse.ArgumentParser(description="A tool to encrypt/decrypt files from the CLI")
+    parser = argparse.ArgumentParser(description="A tool to Run a CLI process and handle its output")
 
     parser.add_argument('--cmd',
                         '-c',
