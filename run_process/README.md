@@ -40,10 +40,13 @@ timeouts and the cleanup of subprocesses that the command may have spawned
 
 ## Return
 
-when the start() returns it returns
-wasSuccessful - true if 1) the required parameters, if any, were found. 2) no avoided responses, if any, were found 3) we did not timeout before completing processing
-traces - stdout from the cmd
-responses\_remaining - upon returning, what required responses have not yet been found? helpful for troubleshooting failures as well as scenarios where you want to react to a series of async messages but only once.
+* was\_successful
+  when the start() returns it returns 'wasSuccessful == true' if:
+     1) the required parameters, if any, were found.
+     2) no avoided responses, if any, were found
+     3) we did not timeout before completing processing as directed
+* traces - stdout from the cmd
+* responses\_remaining - upon returning, what required responses have not yet been found? helpful for troubleshooting failures as well as scenarios where you want to react to a series of async messages but only once.
 
 # Examples
 
