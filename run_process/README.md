@@ -1,8 +1,6 @@
 # RunProcess
 
-RunProcess allows you to interact with system processes and react to the response in real-time. This will also manage any child/subprocesses the command you call may have spawned.
-
-This has been tested on Mac, Linux and Windows.
+RunProcess allows you to interact with system processes and react to the response in real-time.
 
 You can create a process to run by instantiating RunProcess like:
 
@@ -15,6 +13,10 @@ Then, you can start the process via:
 ```Python
 wasSuccessful, traces, responses_remaining = process_obj.start()
 ```
+
+This has been tested on Mac, Linux and Windows.
+
+This will also manage any child/subprocesses the command you call may have spawned.
 
 ## Parameters
 
