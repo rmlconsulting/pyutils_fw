@@ -34,6 +34,9 @@ import logging
 import time
 from enum import Enum, auto
 from typing import Union, List, Tuple
+import os
+import traceback
+import sys
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.
@@ -55,27 +58,79 @@ class SubprocessShutdownError(Exception):
 
 class DeviceCommsBase(ABC):
 
-    def __init__(self):
+    def __init__(self, hardware_recovery_time_sec):
 
+        # main interaction point with a comms device is through the read
+        # and write queues. read is data from the device and write is data
+        # to be sent to the device's main interface
         self.write_queue = queue.Queue()
         self.read_queue = queue.Queue()
 
-        self.is_logging = threading.Event()
-        self.is_logging.clear()
+        # are we logging?
+        self._is_logging = threading.Event()
+        self._is_logging.clear()
 
-        # guard any access to physical devices
-        self.hardware_mutex = threading.BoundedSemaphore(1)
+        # guard any access to physical devices. useful when integrating this
+        # with other tools like a programmer or emulator hardware
+        self._hardware_mutex = threading.BoundedSemaphore(1)
 
         # flag for async shutdown
-        self.stop_requested = threading.Event()
+        self._stop_requested = threading.Event()
 
-        self.thread_mgmt_lock = threading.Lock()
-        self.startup_status = StartupStatus.UNKNOWN
+        self._thread_mgmt_lock = threading.Lock()
+        self._startup_status = StartupStatus.UNKNOWN
 
-        self.hardware_recovery_time_sec = 0
+        self._hardware_recovery_time_sec = hardware_recovery_time_sec
 
     def __str__(self):
-        return f"CommsDevice(isLogging:{self.is_logging.isSet()}. stop:{self.stop_requested.isSet()}"
+        return f"CommsDevice(isLogging:{self._is_logging.isSet()}. stop:{self._stop_requested.isSet()}"
+
+    def does_device_exist(self, device_path):
+        """
+        Check if a device exists on the system, handling relative paths,
+        environment variables, and user home shortcuts.
+        Note: this is not checking for connectivity or state. this is just a
+        sanity tets to see if it is plugged in before we try to connect.
+
+        On Linux and macOS, 'device' should be the device file path (e.g. '/dev/ttyUSB0').
+        On Windows, if 'device' is a COM port (e.g. 'COM3'), the function uses PySerial
+        to list available COM ports.
+
+        This function:
+          - Expands environment variables (e.g., "$HOME" or "%USERPROFILE%")
+          - Expands user home shortcuts (e.g., "~")
+          - Converts relative paths to absolute paths (when applicable)
+
+        Args:
+            device (str): The device path or COM port string.
+
+        Returns:
+            str: device path if device exists, None otherwise
+        """
+
+
+        # Check for Windows platform and if the device looks like a COM port
+        if sys.platform.startswith("win") and expanded_device.upper().startswith("COM"):
+            try:
+                import serial.tools.list_ports
+            except ImportError:
+                raise ImportError("pyserial is required to check COM ports on Windows. "
+                                  "Please run 'pip install requirements.txt from the device_comms directory'")
+            # List available COM ports (normalize to uppercase for consistency)
+            ports = [port.device.upper() for port in serial.tools.list_ports.comports()]
+            return expanded_device.upper() in ports
+
+        else:
+
+            # Expand environment variables and user home (~)
+            expanded_device = os.path.abspath( \
+                              os.path.expanduser( \
+                              os.path.expandvars( device_path )))
+
+            if os.path.exists(expanded_device):
+                return expanded_device
+
+            return None
 
     def set_event_map(self, event_map: dict) -> None:
 
@@ -87,13 +142,13 @@ class DeviceCommsBase(ABC):
             raise Exception("Error initializing trace event map: you cannot have two of the same trace or two of the same event in the map")
 
     def acquire_hardware_mutex(self, timeout_ms = 10000) -> None:
-        acquired = self.hardware_mutex.acquire( timeout = timeout_ms // 1000 )
+        acquired = self._hardware_mutex.acquire( timeout = timeout_ms // 1000 )
 
         if not acquired:
             raise Exception("Debugger mutex unable to be acquired : " + str(self))
 
     def __timer_handler_release_hardware_mutex(self) -> None:
-        self.hardware_mutex.release()
+        self._hardware_mutex.release()
 
     def release_hardware_mutex(self) -> None:
         """ release the hardware mutex. if a recovery time is set, set a timer
@@ -105,17 +160,17 @@ class DeviceCommsBase(ABC):
             resource.
         """
         # if we have a recovery time after programming for stability reasons
-        if (self.hardware_recovery_time_sec):
+        if (self._hardware_recovery_time_sec):
 
-            self.debugger_release_timer = threading.Timer( self.hardware_recovery_time_sec,
+            self.debugger_release_timer = threading.Timer( self._hardware_recovery_time_sec,
                                                            self.__timer_handler_release_hardware_mutex)
 
             self.debugger_release_timer.start()
         else:
-            self.hardware_mutex.release()
+            self._hardware_mutex.release()
 
     def is_capturing_traces(self) -> bool:
-        return self.is_logging.isSet()
+        return self._is_logging.isSet()
 
     @abstractmethod
     def _start_capturing_traces(self, startup_complete_event: threading.Event) -> None:
@@ -134,7 +189,7 @@ class DeviceCommsBase(ABC):
             is in a good state
         """
 
-        if self.is_logging.isSet():
+        if self._is_logging.isSet():
             logger.info("Traces are already being captured. ignoring start request")
             return
 
@@ -149,28 +204,27 @@ class DeviceCommsBase(ABC):
             startup_complete_event.wait()
 
         except Exception as e:
-            logger.error(f"Log Startup Threw Exception: {e}")
+            print(f"Log Startup Threw Exception: {e}")
+            traceback.print_exc()
 
-        with self.thread_mgmt_lock:
-            if self.startup_status != StartupStatus.SUCCESS:
-                raise SubprocessStartError(f"Could not startup log capturing thread. status:{self.startup_status}")
+        with self._thread_mgmt_lock:
+            if self._startup_status != StartupStatus.SUCCESS:
+                raise SubprocessStartError(f"Could not startup log capturing thread. status:{self._startup_status}")
 
-        self.is_logging.set()
+        self._is_logging.set()
 
-        return self.startup_status
+        return self._startup_status
 
     def stop_capturing_traces(self) -> None:
         """ stop capturing logs. this will stop all services running on your machine
             that interact with the debugger
-            TODO: confirm if this allows accessories to go to sleep. it might require
-                  a reset after logging is started before normal operation is resumed
         """
 
-        if not self.is_logging.isSet():
+        if not self._is_logging.isSet():
             logger.info("Traces are not being captured. ignoring stop request")
             return
 
-        self.stop_requested.set()
+        self._stop_requested.set()
 
         try:
             self._stop_capturing_traces()
@@ -178,7 +232,7 @@ class DeviceCommsBase(ABC):
             logger.error("Stop capturing traces exception: {e}")
             raise SubprocessShutdownError(f"Could not shutdown log capturing thread. error:{e}")
 
-        self.is_logging.clear()
+        self._is_logging.clear()
 
     def wait_for_event(self, required_events, avoided_events = None, timeout_ms = 10000, accumulate_traces = False, req_all_events = True):
 

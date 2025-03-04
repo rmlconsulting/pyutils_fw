@@ -26,26 +26,15 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ################################################################################
 
-import queue
 import threading
-import subprocess
-import re
 import os
-import shutil
 import platform
 import traceback
-import sys
 import time
-import datetime
 import serial
-import select
-import struct
 
 import serial.tools.list_ports
 from dataclasses import dataclass
-from asyncio.subprocess import PIPE,STDOUT
-from enum import IntEnum
-from typing import NamedTuple
 import logging
 
 from device_comms_base import DeviceCommsBase, StartupStatus
@@ -58,82 +47,78 @@ logger.addHandler(logging.NullHandler())
 @dataclass
 class SerialCommsDeviceConfig:
     serial_device_path: str # device path or com port to serial device
-    baud_rate: str = None # optionally set the baudrate
+    baud_rate: int # set the baudrate
+    device_recovery_time: int = 0 # amount of time needed before reconnecting
+                                  # once disconnected
 
 class SerialCommsDevice(DeviceCommsBase):
 
     def __init__(self, config_object):
 
-        super().__init__()
 
-        assert isinstance(config_object, SerialCommsDeviceConfig), "config must be of type SerialCommsDeviceConfig"
+        assert isinstance(config_object, SerialCommsDeviceConfig), \
+                "config must be of type SerialCommsDeviceConfig"
 
-        self.config = config_object
+        super().__init__(hardware_recovery_time_sec = config_object.device_recovery_time)
 
-    def __device_connected(self, device: str) -> bool:
-        """Check if the given device is connected by comparing it against
-        the list of available serial ports on the system."""
+        self.__config = config_object
 
-        ports = [p.device for p in serial.tools.list_ports.comports()]
-        return device in ports
+    def __str__(self):
+        """ Stringify the SerialCommsDevice object """
 
-    def __get_device_path(self) -> str:
-        """
-        Returns the proper device path.
-        On Linux, expand user and get absolute path.
-        On Windows, use the provided path directly.
-        """
-
-        if platform.system() == "Linux":
-            return os.path.abspath(os.path.expanduser(self.config.serial_device_path))
-        else:
-            return self.config.serial_device_path
+        return f"SerialCommsDevice(path:{self.__config.serial_device_path}." + \
+               f" baudrate:{self.__config.baud_rate}." + \
+               f" isLogging:{self._is_logging.isSet()}." + \
+               f" stop:{self._stop_requested.isSet()}" + \
+               ")"
 
     def __logging_service_thread(self, startup_complete_event_listener: threading.Event):
-        """Internal thread method for capturing incoming serial data."""
+        """ Internal thread method for capturing incoming serial data.
+            This thread is responsible for taking data from the target device
+            and placing it in the read_queue. also taking data from the
+            write_queue and sending it out to the target device.
+        """
 
-        logger.debug("Starting logging service thread... [" + str(self.config.serial_device_path) + "]")
+        logger.debug("Starting logging service thread... [{self.__config.serial_device_path)}")
 
-        device = self.__get_device_path()
-        #if not self.__device_connected(device):
-        #    logger.debug("Failed to open: device " + device + " is not connected")
-        #    print("Failed to open: device " + device + " is not connected")
-        #    with self.thread_mgmt_lock:
-        #        self.startup_status = StartupStatus.ERROR
-        #    startup_complete_event_listener.set()  # In case of error, unblock startup
-        #    return
+        device_path = self.does_device_exist( self.__config.serial_device_path )
+
+        if not device_path:
+
+            logger.error(f"Error: Failed to open: device {self.__config.serial_device_path} is not connected")
+            with self._thread_mgmt_lock:
+                self._startup_status = StartupStatus.ERROR
+            startup_complete_event_listener.set()
+            return
 
         try:
 
-            with serial.Serial(self.config.serial_device_path, self.config.baud_rate) as ser:
+            with serial.Serial(device_path, self.__config.baud_rate) as ser:
 
                 if ser is None:
                     raise Exception("Could not begin uart logging")
 
-                print("event listener set...")
-
-                with self.thread_mgmt_lock:
-                    self.startup_status = StartupStatus.SUCCESS
+                with self._thread_mgmt_lock:
+                    self._startup_status = StartupStatus.SUCCESS
 
                 # Signal to the caller that the hardware is in a good state.
                 startup_complete_event_listener.set()
 
-                while not self.stop_requested.isSet():
+                while not self._stop_requested.isSet():
 
                     data_read = False
                     data_written = False
 
+                    # pick up any data pending on the serial bus
                     if ser.in_waiting:
                         data_read = True
                         # Read and decode the trace
-                        #trace = ser.readline().decode("utf-8").strip()
                         trace = ser.readline().decode("latin-1").strip()
 
                         if len(trace) == 0:
                             continue
 
-                        #logger.log(logging.DEBUG, trace)
-                        print(f"<-- {trace}")
+                        logger.log(logging.DEBUG, f"<-- {trace}")
 
                         # Put the trace into the read_queue
                         if self.read_queue is not None:
@@ -141,6 +126,7 @@ class SerialCommsDevice(DeviceCommsBase):
                         else:
                             raise Exception("No logging queue available")
 
+                    # handle outgoing commands to send
                     if not self.write_queue.empty():
                         data_written = True
 
@@ -158,15 +144,10 @@ class SerialCommsDevice(DeviceCommsBase):
             logger.error("Logging service encountered an error: " + str(e))
             traceback.print_exc()
 
-            with self.thread_mgmt_lock:
-                self.startup_status = StartupStatus.ERROR
+            with self._thread_mgmt_lock:
+                self._startup_status = StartupStatus.ERROR
 
             startup_complete_event_listener.set()  # In case of error, unblock startup
-
-    def is_capturing_traces(self) -> bool:
-        """Return True if the logging (read) thread is actively capturing traces."""
-
-        return hasattr(self, 'logging_thread') and self.logging_thread.is_alive()
 
     def _start_capturing_traces(self, startup_complete_event):
         """Start capturing the logs of a given device.
@@ -176,14 +157,14 @@ class SerialCommsDevice(DeviceCommsBase):
         self.acquire_hardware_mutex()
 
         # Start the logging thread
-        self.logging_thread = threading.Thread(
+        self.__logging_thread = threading.Thread(
             target=self.__logging_service_thread,
             args=(startup_complete_event,),
-            daemon=True
+            #daemon=True
         )
 
-        print("starting serial thread ...")
-        self.logging_thread.start()
+        logger.info("starting serial thread ...")
+        self.__logging_thread.start()
 
         self.release_hardware_mutex()
 
@@ -195,10 +176,10 @@ class SerialCommsDevice(DeviceCommsBase):
            that interact with the end device.
         """
 
-        self.stop_requested.set()
+        self._stop_requested.set()
 
-        if hasattr(self, 'logging_thread') and self.logging_thread.is_alive():
-            self.logging_thread.join()
+        if hasattr(self, 'logging_thread') and self.__logging_thread.is_alive():
+            self.__logging_thread.join()
 
         logger.debug("Stopped capturing traces.")
 

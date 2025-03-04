@@ -5,12 +5,10 @@ RunProcess allows you to interact with system processes and react to the respons
 You can create a process to run by instantiating RunProcess like:
 
 ```Python
+# Create a RunProcess object
 process_obj = RunProcess("echo foo")
-```
 
-Then, you can start the process via:
-
-```Python
+# You can start the process via:
 wasSuccessful, traces, responses_remaining = process_obj.start()
 ```
 
@@ -20,10 +18,12 @@ This will also manage any child/subprocesses the command you call may have spawn
 
 ## Parameters
 
-just running a cli command can be achieved with os.system(...), what make this
+Running a cli command can be achieved with os.system(...), what make this
 class more functional is the customization around how to handle the data
 coming back from the processes stdout, when and how to return, ability to handle
 timeouts and the cleanup of subprocesses that the command may have spawned
+
+controlling the behavior of RunProcess is all about the instantiation. here are the customization parameters available to you.
 
 * <strong>cmd</strong> - cli command to run
 * <strong>resp_req</strong> (optional. default None) - required responses. string or list of strings. all of the provided strings must be seen in stdout in order to be considered successful.

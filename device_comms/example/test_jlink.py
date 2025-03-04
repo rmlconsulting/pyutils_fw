@@ -1,7 +1,14 @@
 
-import jlink_device
 import logging
+import os
+import sys
 import time
+
+# add parent directory to python path for this example
+parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
+sys.path.insert(0, parent_dir)
+
+import jlink_device
 
 ##########################################
 # LOGGING
@@ -18,20 +25,17 @@ logger.setLevel(logging.DEBUG)
 # device setup
 ##########################################
 config = jlink_device.JLinkTransportConfig( "NRF52832_XXAA" )
+
 device = jlink_device.JLinkComms(config)
-
-devices = device.get_device_list()
-print(devices)
-
-
 
 ##########################################
 # run test
 ##########################################
 device.start_capturing_traces()
-foo = device.wait_for_trace("STEERING", timeout_ms = 5000)
 
-print(foo)
+success, traces, remaining_search = device.wait_for_trace("my trace: (\d+)", timeout_ms = 5000)
+
+print(f"my trace. successful:{success}. value:{}")
 
 ##########################################
 # shutdown

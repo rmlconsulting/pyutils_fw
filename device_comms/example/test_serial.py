@@ -1,8 +1,14 @@
 
-import serial_device
 import logging
 import time
+import os
+import sys
 
+# add parent directory to python path for this example
+parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
+sys.path.insert(0, parent_dir)
+
+import serial_device
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -30,7 +36,7 @@ time.sleep(2)
 
 device.send_cmd("?")
 foo = device.wait_for_trace("write_pin", accumulate_traces=True)
-print(foo[1])
+print(foo)
 
 device.send_cmd_to_link_management("halt")
 
