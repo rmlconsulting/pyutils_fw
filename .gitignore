@@ -9,6 +9,8 @@ __pycache__/
 # VIM
 .*.swp
 
+.DS_Store
+
 # Distribution / packaging
 .Python
 build/
