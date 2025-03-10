@@ -83,9 +83,9 @@ device.wait_for_trace("hello world")
 device.send_cmd_and_wait_for_trace("echo hello world", "hello world")
 ```
 
-in all '...wait_for_trace()' functions you get a lot of configurability. This configurability on waiting for responses in the way you need really makes the library.
+in all '...wait\_for\_trace()' functions you get a lot of configurability. This configurability on waiting for responses in the way you need really makes the library.
 
-* <strong>resp_req</strong> (optional. default None) - required responses. string or list of strings. all of the provided strings must be seen in stdout in order to be considered successful.
+* <strong>resp_req</strong> (optional. default None) - required responses. string or list of strings. all of the provided strings must be seen in stdout in order to be considered successful. run until all required responses are found.
 * <strong>resp_avoid</strong> (optional. deafult=None) - avoided responses. string or list of strings. if any of these responses are seen, fail and return immediately.
 * <strong>timeout_ms</strong> (optional. deafult=10000)-  max process runtime. 0 == no timeout. if the process does not complete by the given time, fail and return.
 * <strong>run_to_completion</strong> (optional. default=False) - run till process completion? Useful if you do not care about the output but you do want the process to run. e.g. "kill 12345"

@@ -15,7 +15,7 @@ import jlink_device
 ##########################################
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s_%(name)s_%(levelname)s_%(message)s"
 )
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -33,9 +33,20 @@ device = jlink_device.JLinkComms(config)
 ##########################################
 device.start_capturing_traces()
 
-success, traces, remaining_search = device.wait_for_trace("my trace: (\d+)", timeout_ms = 5000)
+'''
+2025-03-08 19:28:11,700 - jlink_device - DEBUG - [00:00:02.647,000] <info> app: new battery reading: 16382 mV. last reported: 0mV. sig? 1
+2025-03-08 19:28:13,857 - jlink_device - DEBUG - [00:00:04.850,000] <info> app: Button 0 pressed
+2025-03-08 19:28:14,052 - jlink_device - DEBUG - [00:00:05.056,000] <info> app: Button 0 released
+2025-03-08 19:28:14,385 - jlink_device - DEBUG - [00:00:05.403,000] <info> app: Button 0 pressed
+2025-03-08 19:28:14,577 - jlink_device - DEBUG - [00:00:05.596,000] <info> app: Button 0 released
+'''
 
-print(f"my trace. successful:{success}. value:{}")
+success, traces, remaining_search = device.wait_for_trace("Button (?P<button_num>\d+) pressed", timeout_ms = 5000)
+
+print(f"my trace. successful:{success}. value:{traces}")
+success, traces, remaining_search = device.wait_for_trace("Button (?P<button_num>\d+) pressed", timeout_ms = 5000)
+print(f"my trace. successful:{success}. value:{traces}")
+
 
 ##########################################
 # shutdown
