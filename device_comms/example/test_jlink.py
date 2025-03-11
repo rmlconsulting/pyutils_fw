@@ -5,7 +5,9 @@ import sys
 import time
 
 # add parent directory to python path for this example
-parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
+this_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(this_dir, '..'))
+print(f"parent_dir = {parent_dir}")
 sys.path.insert(0, parent_dir)
 
 import jlink_device
@@ -46,7 +48,6 @@ success, traces, remaining_search = device.wait_for_trace("Button (?P<button_num
 print(f"my trace. successful:{success}. value:{traces}")
 success, traces, remaining_search = device.wait_for_trace("Button (?P<button_num>\d+) pressed", timeout_ms = 5000)
 print(f"my trace. successful:{success}. value:{traces}")
-
 
 ##########################################
 # shutdown

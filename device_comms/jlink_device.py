@@ -101,6 +101,8 @@ class JLinkComms(DeviceCommsBase):
         self.__jlink_process = subprocess.Popen(
                                    ['/bin/sh', '-c', jlink_process_cmd],
                                    encoding="ISO-8859-1",
+                                   bufsize=1,
+                                   universal_newlines=True,
                                    stdout=subprocess.PIPE,
                                    stdin=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
@@ -177,9 +179,10 @@ class JLinkComms(DeviceCommsBase):
 
         #logger.debug("starting rtt [" + jlink_process_cmd + "]")
         self.__logging_process = subprocess.Popen(
-                                          ['/bin/sh', '-c',
-                                          logging_process_cmd],
+                                          ['/bin/sh', '-c', logging_process_cmd],
                                           stdout=subprocess.PIPE,
+                                          stdin=subprocess.PIPE,
+                                          stderr=subprocess.PIPE,
                                           bufsize=1,
                                           universal_newlines=True,
                                           encoding="ISO-8859-1")
@@ -203,8 +206,11 @@ class JLinkComms(DeviceCommsBase):
             self.__telnet_port = JLinkComms.last_telnet_port_used - 1
 
         print(f"start jlink server on port {self.__telnet_port}")
+
+        jlink_server_shudown_request = threading.Event()
+
         # startup jlinkexe
-        success = self.__start_jlink_server(self.__telnet_port, shutdown_request)
+        success = self.__start_jlink_server(self.__telnet_port, jlink_server_shudown_request)
 
         if not success:
             logger.debug("ERROR: Aborting test. Failed to bringup JLink Server")
@@ -221,8 +227,9 @@ class JLinkComms(DeviceCommsBase):
         # you hit jlink's driver too hard
         time.sleep(0.5)
 
+        logging_service_shudown_request = threading.Event()
         logger.debug("staring logging process on port [" + str(self.__telnet_port) + "...")
-        self.__start_logging_process(self.__telnet_port, self._stop_requested)
+        self.__start_logging_process(self.__telnet_port, logging_service_shudown_request)
 
         time.sleep(0.25)
 
@@ -262,22 +269,24 @@ class JLinkComms(DeviceCommsBase):
                 self.read_queue.put(line)
 
             if (shutdown_request.isSet()):
-                print("breaking out of logging loop")
-                # tell jlink to shutdown
-                self.send_cmd_to_link_management("quit")
-                break;
-
-                logger.debug("process logging stop request")
-
-                if (self.__logging_process is not None):
-                    self.__logging_process.kill()
-                    self.__logging_process = None
-
-                if (self.__jlink_process is not None):
-                    self.__jlink_process.kill()
-                    self.__jlink_process = None
-
                 break
+
+        # wind things down in the reverse order
+        logger.debug("process logging stop request")
+
+        # let the logging service shutdown in the event we're waiting on
+        # setup when the logging is being torn down
+        logging_service_shudown_request.set()
+
+        if (self.__logging_process is not None):
+            self.__logging_process.kill()
+            self.__logging_process = None
+
+        # try to let jlink exit gracefully
+        jlink_server_shudown_request.set()
+        self.send_cmd_to_link_management("Exit\r\n")
+        self.__jlink_process.wait()
+        self.__jlink_process = None
 
     ###########################################################################
     # public  functions
@@ -304,38 +313,11 @@ class JLinkComms(DeviceCommsBase):
         # to kill jlink process when doing something else, like 'nrfjprog -r'
         # can cause the jlink driver to go crazy
         self.acquire_hardware_mutex()
-        time.sleep(1)
-
-        #try:
-        #    if (self.__logging_process and self.__logging_process.poll() is not None):
-        #        print("communicate with logging process...")
-        #        self.__logging_process.communicate()
-        #    else:
-        #        print("no need to communicate...")
-        #except:
-        #    logger.debug("logging process hung... cant stop it nicely. killing it")
-
-        # if the process exists and is still running then we have to terminate
-        # it from here
-        if (self.__logging_process and self.__logging_process.poll() is not None):
-            logger.debug("nuking logging process...")
-            self.__logging_process.kill()
-            self.__logging_process = None
-        else:
-            print("no need to kill logging process...")
-
-        # if the process exists and is still running then we have to terminate
-        # it from here
-        if (self.__jlink_process and self.__jlink_process.poll() is not None):
-            logger.debug("nuking jlink process")
-            self.__jlink_process.kill()
-            self.__jlink_process = None
-        else:
-            print("no need to kill jlink process...")
 
         if self.__log_thread.is_alive():
             print("joining log thread...")
             self.__log_thread.join(timeout=1)
+
             self.__log_thread = None
         else:
             print("looging thread is dead already...")
