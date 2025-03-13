@@ -243,7 +243,6 @@ class JLinkComms(DeviceCommsBase):
 
         # capture data from the device and stick it in our queue
         while( True ):
-            print(".")
             line = None
 
             #TODO: this wont work on windows, ... how should we do
@@ -258,11 +257,9 @@ class JLinkComms(DeviceCommsBase):
                 # fd ready for reading. we only were looking for read on stdout
                 # so if we have something stdout will not block
                 if (len(poll_result) > 0):
-                    print("reading stdout...")
                     line = self.__logging_process.stdout.readline().strip()
 
                     if (len(line) == 0):
-                        print("empty line continue...")
                         continue
 
                     logger.debug(line)
