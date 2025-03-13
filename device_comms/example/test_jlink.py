@@ -17,7 +17,7 @@ import jlink_device
 ##########################################
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s_%(name)s_%(levelname)s_%(message)s"
+    format="%(asctime)s-%(name)s-%(levelname)s:%(message)s"
 )
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

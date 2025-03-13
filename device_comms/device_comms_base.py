@@ -103,6 +103,11 @@ class DeviceCommsBase(ABC):
         self.write_queue = queue.Queue()
         self.read_queue = queue.Queue()
 
+        # a queue to safely write to and read from the link maintainer (e.g. the
+        # websocket server, jlink server, etc)
+        self.link_write_queue = queue.Queue()
+        self.link_read_queue = queue.Queue()
+
         # are we logging?
         self._is_logging = threading.Event()
         self._is_logging.clear()

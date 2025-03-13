@@ -34,6 +34,7 @@ import os
 import sys
 import time
 import select
+import signal
 from asyncio.subprocess import PIPE,STDOUT
 from enum import IntEnum
 import logging
@@ -250,43 +251,56 @@ class JLinkComms(DeviceCommsBase):
             # no way to kill the process when no logs are being
             # generated
             # other approaches: asyncio -> doesn't support timeouts
-            poll_result = select.select([self.__logging_process.stdout], [],[], 0.25)[0]
+            with self._hardware_mutex:
+                poll_result = select.select([self.__logging_process.stdout], [],[], 0.005)[0]
 
-            # poll will return the fds that are ready. array entry 0 is the
-            # fd ready for reading. we only were looking for read on stdout
-            # so if we have something stdout will not block
-            if (len(poll_result) > 0):
-                with self._hardware_mutex:
+                # poll will return the fds that are ready. array entry 0 is the
+                # fd ready for reading. we only were looking for read on stdout
+                # so if we have something stdout will not block
+                if (len(poll_result) > 0):
                     print("reading stdout...")
                     line = self.__logging_process.stdout.readline().strip()
 
-                if (len(line) == 0):
-                    print("empty line continue...")
-                    continue
+                    if (len(line) == 0):
+                        print("empty line continue...")
+                        continue
 
-                logger.debug(line)
+                    logger.debug(line)
 
-                self.read_queue.put(line)
+                    self.read_queue.put(line)
+
+                if not self.write_queue.empty():
+                    msg = self.write_queue.get()
+                    self.__logging_process.stdin.write( msg + "\r\n" )
+                    self.__logging_process.stdin.flush()
 
             if (shutdown_request.isSet()):
+                print("breaking out of logging process loop")
                 break
 
         # wind things down in the reverse order
         logger.debug("process logging stop request")
 
-        # let the logging service shutdown in the event we're waiting on
-        # setup when the logging is being torn down
+        # let our services shutdown gracefully.
+        # rtt shutdown (startup only)
         logging_service_shudown_request.set()
-
-        if (self.__logging_process is not None):
-            self.__logging_process.kill()
-            self.__logging_process = None
-
-        # try to let jlink exit gracefully
+        # jlink server shutdown (startup only)
         jlink_server_shudown_request.set()
+        # quit (jlink running)
         self.send_cmd_to_link_management("Exit\r\n")
+
+        logger.debug("shutting down RTT client")
+        # sending sigint to the process to shut it down
+        self.__logging_process.send_signal(signal.SIGINT)
+        self.__logging_process.wait()
+        self.__logging_process = None
+
+        logger.debug("shutting down JLink Server")
+        # let jlink exit gracefully
         self.__jlink_process.wait()
         self.__jlink_process = None
+
+        logger.debug("done")
 
     ###########################################################################
     # public  functions
@@ -295,47 +309,52 @@ class JLinkComms(DeviceCommsBase):
     # start capturing the logs of a given device.
     def _start_capturing_traces(self, startup_complete_event):
 
-        self.acquire_hardware_mutex()
-
-        self.__log_thread = threading.Thread(target = self.__logging_service_thread,
+        with self._hardware_mutex:
+            self.__log_thread = threading.Thread(target = self.__logging_service_thread,
                                            args = [startup_complete_event, self._stop_requested],
                                            daemon=False)
-        self.__log_thread.start()
+            self.__log_thread.start()
 
         logger.debug("logging thread running...")
-
-        self.release_hardware_mutex()
 
     # stop capturing logs. this will stop all services running on your machine
     # that interact with the debugger
     def _stop_capturing_traces(self):
 
         # to kill jlink process when doing something else, like 'nrfjprog -r'
-        # can cause the jlink driver to go crazy
-        self.acquire_hardware_mutex()
+        # can cause the jlink driver to go crazy. make sure you have exclusive
+        # hardware access first, then you can tear it down
+        with self._hardware_mutex:
 
-        if self.__log_thread.is_alive():
-            print("joining log thread...")
-            self.__log_thread.join(timeout=1)
+            if self.__log_thread.is_alive():
+                print(f"joining log thread...{self._stop_requested}")
+                self.__log_thread.join()
+                self.__log_thread = None
+            else:
+                print("looging thread is dead already...")
 
-            self.__log_thread = None
-        else:
-            print("looging thread is dead already...")
-
-        self.release_hardware_mutex()
+        print("log thread joined...")
 
     def send_cmd_to_link_management(self, cmd):
         """
-        send a command to the jlink server. See reference at:
-        https://kb.segger.com/J-Link_Commander
+        send a command to the jlink server. e.g. to halt the cpu you could do:
+
+        jlink_device.send_cmd_to_link_management("halt")
+
+        See full command list at: https://kb.segger.com/J-Link_Commander
         """
         if self.__jlink_process:
-            logger.debug(f"sending cmd to jlink: {cmd}")
-            self.__jlink_process.stdin.write(cmd)
-            self.__jlink_process.stdin.flush()
+            #TODO: we need to spin up a thread to maintain read/write capabilities
+            # with the jlink device. for now we'll just write directly to the
+            # process stdin. not the best idea
+            #self.link_write_queue.put_nowait(cmd)
+            with self._hardware_mutex:
+                self.__jlink_process.stdin.write( cmd )
+                self.__jlink_process.stdin.flush()
+
             return True
         else:
-            logger.debug("Not connected to jlink")
-            return False
+            logger.error("Cannot send command to jlink: no jlink process running")
 
+        return False
 
