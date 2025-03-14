@@ -288,6 +288,7 @@ class DeviceCommsBase(ABC):
                        avoided_events = None,
                        timeout_ms = 10000,
                        trace_collect_pattern: DeviceTraceCollectPattern = DeviceTraceCollectPattern.MATCHING,
+                       trace_response_format: TraceResponseFormat = TraceResponseFormat.RAW_TRACES,
                        return_on_first_match = False,
                        use_backlog = True):
 
@@ -306,8 +307,10 @@ class DeviceCommsBase(ABC):
                                                   resp_avoid = avoided_traces,
                                                   timeout_ms = timeout_ms,
                                                   trace_collect_pattern = trace_collect_pattern,
+                                                  trace_response_format = trace_response_format,
                                                   return_on_first_match = return_on_first_match,
-                                                  use_backlog = use_backlog)
+                                                  use_backlog = use_backlog,
+                                                 )
 
         for trace in traces:
 
@@ -356,11 +359,13 @@ class DeviceCommsBase(ABC):
 
         # raw traces are just one continuous string
         if trace_response_format == TraceResponseFormat.RAW_TRACES:
+            print("trace response RAW...")
             trace_response += trace_response
 
         # processed traces will be a list of dictionaries
         elif trace_response_format == TraceResponseFormat.PROCESSED_RESPONSES:
             trace_event = TraceEvent(trace, regex_search_string, regex_match_obj)
+            print(f"got trace event: {trace_event}")
 
             trace_response.append(trace_event.to_dict())
 
@@ -424,8 +429,15 @@ class DeviceCommsBase(ABC):
         # make a helper function to get the time in milliseconds
         now = lambda: int(round(time.time() * 1000))
         start_time = now()
-        traces_to_return = ''
         stop_processing = False
+
+
+        if (trace_response_format == TraceResponseFormat.PROCESSED_RESPONSES):
+            traces_to_return = []
+        elif (trace_response_format == TraceResponseFormat.RAW_TRACES):
+            traces_to_return = ''
+        else:
+            raise Exception("Unknown trace response format...")
 
         try:
 
@@ -521,7 +533,7 @@ class DeviceCommsBase(ABC):
 
         logger.debug("Completed")
 
-        return (success, traces_to_return.strip(), resp_req)
+        return (success, traces_to_return, resp_req)
 
     # get rid of all logs in the trace_logs queue
     # return all the dumped logs in case you were interested

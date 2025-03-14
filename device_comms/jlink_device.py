@@ -274,7 +274,6 @@ class JLinkComms(DeviceCommsBase):
             if (shutdown_request.isSet()):
                 print("breaking out of logging process loop")
                 break
-
         # wind things down in the reverse order
         logger.debug("process logging stop request")
 
