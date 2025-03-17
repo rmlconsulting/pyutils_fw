@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.DEBUG)
 
-StdoutCapture(".")
+# everything printed to stdout after this will go to the log file
+capture_obj = StdoutCapture(".")
 
 print("foo")
+# foo should now be in the logs
+
+# everything printed to stdout after this will go to the new_log file
+capture_obj.log_to_new_file("new_log")
+
+print("bar")
 
