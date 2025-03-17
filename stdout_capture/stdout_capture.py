@@ -26,7 +26,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ################################################################################
 
-import pytest
 import datetime
 import sys
 import os
@@ -36,7 +35,7 @@ import logging
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.
 logger = logging.getLogger(__name__)
-log.addHandler(logging.NullHandler())
+logger.addHandler(logging.NullHandler())
 
 class StdoutCapture():
 
