@@ -54,6 +54,7 @@ class JLinkTransportInterface(IntEnum):
 @dataclass
 class JLinkTransportConfig:
     target_device: str # something like NRF52832_XXAA or STM32G491VE
+    name: str = "JLinkDevice" # just for sensible logs
     debugger_sn: str = None # when running more than 1 debugger
     interface: JLinkTransportInterface = JLinkTransportInterface.SWD
     speed: int = 64000
@@ -71,7 +72,7 @@ class JLinkDevice(DeviceCommsBase):
         assert isinstance(config_object, JLinkTransportConfig), \
                 "JlinkTransport config param must be an instance of JlinkTransportConfig"
 
-        super().__init__( hardware_recovery_time_sec = config_object.hardware_recovery_time_sec)
+        super().__init__(name = config_object.name, hardware_recovery_time_sec = config_object.hardware_recovery_time_sec)
 
         self.__config = config_object
         self.__telnet_port = None

@@ -98,7 +98,9 @@ class SubprocessShutdownError(Exception):
 
 class DeviceCommsBase(ABC):
 
-    def __init__(self, hardware_recovery_time_sec):
+    def __init__(self, name, hardware_recovery_time_sec):
+
+        self.name = name
 
         # main interaction point with a comms device is through the read
         # and write queues. read is data from the device and write is data
@@ -130,7 +132,7 @@ class DeviceCommsBase(ABC):
         self._hardware_recovery_time_sec = hardware_recovery_time_sec
 
     def __str__(self):
-        return f"CommsDevice(isLogging:{self._is_logging.isSet()}. stop:{self._stop_requested.isSet()}"
+        return f"CommsDevice(name:{self.name}. isLogging:{self._is_logging.isSet()}. stop:{self._stop_requested.isSet()}"
 
     def does_device_exist(self, device_path):
         """
@@ -189,9 +191,9 @@ class DeviceCommsBase(ABC):
             raise Exception("Error initializing trace event map: you cannot have two of the same trace or two of the same event in the map")
 
     def acquire_hardware_mutex(self, timeout_ms = 3000, except_on_fail = True) -> None:
-        logger.debug("--------------------- acquiring mutex...")
+        #logger.debug("--------------------- acquiring mutex...")
         acquired = self._hardware_mutex.acquire( timeout = timeout_ms / 1000 )
-        logger.debug(f"--------------------- acquired: {acquired}")
+        #logger.debug(f"--------------------- acquired: {acquired}")
 
         if not acquired and except_on_fail:
             raise Exception("Debugger mutex unable to be acquired : " + str(self))
@@ -199,7 +201,7 @@ class DeviceCommsBase(ABC):
         return acquired
 
     def __timer_handler_release_hardware_mutex(self) -> None:
-        logger.debug("--------------------- timer fired. releasing mutex")
+        #logger.debug("--------------------- timer fired. releasing mutex")
         self._hardware_mutex.release()
 
     def release_hardware_mutex(self) -> None:
@@ -213,14 +215,14 @@ class DeviceCommsBase(ABC):
         """
         # if we have a recovery time after programming for stability reasons
         if (self._hardware_recovery_time_sec):
-            logger.debug("--------------------- scheduling mutex release..")
+            #logger.debug("--------------------- scheduling mutex release..")
 
             self.debugger_release_timer = threading.Timer( self._hardware_recovery_time_sec,
                                                            self.__timer_handler_release_hardware_mutex)
 
             self.debugger_release_timer.start()
         else:
-            logger.debug("--------------------- immediately releasing mutex")
+            #logger.debug("--------------------- immediately releasing mutex")
             self._hardware_mutex.release()
 
     def is_capturing_traces(self) -> bool:

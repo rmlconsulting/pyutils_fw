@@ -48,6 +48,7 @@ logger.addHandler(logging.NullHandler())
 class SerialCommsDeviceConfig:
     serial_device_path: str # device path or com port to serial device
     baud_rate: int # set the baudrate
+    name: str = "SerialCommsDevice" # just for sensible logs
     device_recovery_time: int = 0 # amount of time needed before reconnecting
                                   # once disconnected
 
@@ -55,11 +56,11 @@ class SerialCommsDevice(DeviceCommsBase):
 
     def __init__(self, config_object):
 
-
         assert isinstance(config_object, SerialCommsDeviceConfig), \
                 "config must be of type SerialCommsDeviceConfig"
 
-        super().__init__(hardware_recovery_time_sec = config_object.device_recovery_time)
+        super().__init__(name = config_object.name,
+                         hardware_recovery_time_sec = config_object.device_recovery_time)
 
         self.__config = config_object
         self.__shutdown_complete = threading.Event()
