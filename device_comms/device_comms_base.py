@@ -332,6 +332,7 @@ class DeviceCommsBase(ABC):
 
         success, traces, remaining_regex = self.wait_for_trace(
                                                   required_responses = required_traces,
+                                                  cmd = cmd,
                                                   avoided_responses = avoided_traces,
                                                   timeout_ms = timeout_ms,
                                                   trace_collect_pattern = trace_collect_pattern,
@@ -426,8 +427,8 @@ class DeviceCommsBase(ABC):
         return trace_response
 
     def wait_for_trace(self,
+                       required_responses: Union[str, List[str]],
                        cmd: str = None,
-                       required_responses: Union[str, List[str]] = None,
                        avoided_responses: Union[str, List[str]] = None,
                        timeout_ms: int = 10000,
                        trace_collect_pattern: DeviceTraceCollectPattern = DeviceTraceCollectPattern.LAST_ONLY,
@@ -458,6 +459,9 @@ class DeviceCommsBase(ABC):
                traces seen
                list of required_responses that were not yet seen
         """
+
+        if not self.is_capturing_traces():
+            self.start_capturing_traces()
 
         # make sure required_responses is either None or a list
         if required_responses:
