@@ -20,10 +20,10 @@ from device_comms_base import TraceResponseFormat, DeviceTraceCollectPattern
 # LOGGING
 ##########################################
 # for lots of logging uncomment this block
-#logging.basicConfig(
-#    level=logging.DEBUG,
+logging.basicConfig(
+    level=logging.DEBUG,
 #    #format="%(asctime)s-%(name)s-%(levelname)s:%(message)s"
-#)
+)
 
 # for logging in this file, uncomment this block
 logger = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ logger.setLevel(logging.DEBUG)
 # device setup
 ##########################################
 # some example device configs
-config = jlink_device.JLinkTransportConfig( "NRF52832_XXAA" )
-#config = jlink_device.JLinkTransportConfig( "STM32G491VE", speed=5000 )
+#config = jlink_device.JLinkTransportConfig( "NRF52832_XXAA" )
+config = jlink_device.JLinkTransportConfig( "STM32G491VE", speed=5000 )
 
 device = jlink_device.JLinkDevice(config)
 
@@ -68,8 +68,6 @@ global_event_map = {
                     }
 
 device.set_event_map(global_event_map)
-
-device.start_capturing_traces()
 
 ############ Test 1: wait for all events. processed responses ##################
 print("\n\n#### TEST 1 : wait for 2 events. return processed logs ######")

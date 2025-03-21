@@ -62,6 +62,8 @@ class SerialCommsDevice(DeviceCommsBase):
         super().__init__(hardware_recovery_time_sec = config_object.device_recovery_time)
 
         self.__config = config_object
+        self.__shutdown_complete = threading.Event()
+        self.__logging_thread = None
 
     def __str__(self):
         """ Stringify the SerialCommsDevice object """
@@ -93,7 +95,7 @@ class SerialCommsDevice(DeviceCommsBase):
 
         try:
 
-            with serial.Serial(device_path, self.__config.baud_rate) as ser:
+            with serial.Serial(device_path, self.__config.baud_rate, timeout=0.25) as ser:
 
                 if ser is None:
                     raise Exception("Could not begin uart logging")
@@ -106,41 +108,53 @@ class SerialCommsDevice(DeviceCommsBase):
 
                 while not self._stop_requested.isSet():
 
+                    acquired = self.acquire_hardware_mutex( timeout_ms = 100,
+                                                            except_on_fail = False)
+
+                    # this most commonly happens when the shutdown request is
+                    # set at just the wrong time
+                    if not acquired:
+                        logger.debug("mutex not acquired. skipping")
+                        continue
+
                     data_read = False
                     data_written = False
 
                     # pick up any data pending on the serial bus
                     if ser.in_waiting:
-                        data_read = True
                         # Read and decode the trace
                         trace = ser.readline().decode("latin-1").strip()
 
-                        if len(trace) == 0:
-                            continue
+                        if len(trace) > 0:
+                            data_read = True
 
-                        logger.log(logging.DEBUG, f"<-- {trace}")
+                            logger.log(logging.DEBUG, f"<-- {trace}")
 
-                        # Put the trace into the read_queue
-                        if self.read_queue is not None:
-                            self.read_queue.put(trace)
-                        else:
-                            raise Exception("No logging queue available")
+                            # Put the trace into the read_queue
+                            if self.read_queue is not None:
+                                self.read_queue.put_nowait(trace)
+                            else:
+                                raise Exception("No logging queue available")
+
 
                     # handle outgoing commands to send
                     if not self.write_queue.empty():
-                        data_written = True
 
                         cmd = self.write_queue.get_nowait()
 
                         if cmd is not None:
+                            data_written = True
                             logger.debug(f"--> {cmd}")
                             ser.write( (cmd + "\n").encode("latin-1") )
+
+                    self.release_hardware_mutex()
 
                     # if we're not doing anything give time back to the CPU
                     if not data_read and not data_written:
                         time.sleep(0.005)
 
         except Exception as e:
+            self.release_hardware_mutex()
             logger.error("Logging service encountered an error: " + str(e))
             traceback.print_exc()
 
@@ -148,13 +162,16 @@ class SerialCommsDevice(DeviceCommsBase):
                 self._startup_status = StartupStatus.ERROR
 
             startup_complete_event_listener.set()  # In case of error, unblock startup
+            raise(e)
+
+        logger.debug("logging thread shutdown")
+
+        self.__shutdown_complete.set()
 
     def _start_capturing_traces(self, startup_complete_event):
         """Start capturing the logs of a given device.
            Return only once we have feedback that the hardware is in a good state.
         """
-
-        self.acquire_hardware_mutex()
 
         # Start the logging thread
         self.__logging_thread = threading.Thread(
@@ -163,22 +180,29 @@ class SerialCommsDevice(DeviceCommsBase):
             #daemon=True
         )
 
+        self.__shutdown_complete.clear()
+        self._stop_requested.clear()
+
         logger.info("starting serial thread ...")
         self.__logging_thread.start()
 
-        self.release_hardware_mutex()
-
         # Wait until the logging thread signals that hardware is ready.
         logger.debug("Started capturing traces.")
+
+    def _send_cmd_to_link_management(self, cmd) -> None:
+        logger.debug("ignoring link management msg. not supported for serial comms")
+        pass
 
     def _stop_capturing_traces(self):
         """Stop capturing logs. This will stop all services running on your machine
            that interact with the end device.
         """
 
-        self._stop_requested.set()
+        # wait for the serial thread to complete shutdown
+        self.__shutdown_complete.wait()
 
-        if hasattr(self, 'logging_thread') and self.__logging_thread.is_alive():
+        if self.__logging_thread is not None and self.__logging_thread.is_alive():
+            logger.debug("joining logging thread")
             self.__logging_thread.join()
 
         logger.debug("Stopped capturing traces.")

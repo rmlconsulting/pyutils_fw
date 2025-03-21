@@ -188,13 +188,15 @@ class DeviceCommsBase(ABC):
         except ValueDuplicationError:
             raise Exception("Error initializing trace event map: you cannot have two of the same trace or two of the same event in the map")
 
-    def acquire_hardware_mutex(self, timeout_ms = 10000) -> None:
-        logger.debug("--------------------- aquiring mutex...")
-        acquired = self._hardware_mutex.acquire( timeout = timeout_ms // 1000 )
-        logger.debug(f"--------------------- aquired: {acquired}")
+    def acquire_hardware_mutex(self, timeout_ms = 3000, except_on_fail = True) -> None:
+        logger.debug("--------------------- acquiring mutex...")
+        acquired = self._hardware_mutex.acquire( timeout = timeout_ms / 1000 )
+        logger.debug(f"--------------------- acquired: {acquired}")
 
-        if not acquired:
+        if not acquired and except_on_fail:
             raise Exception("Debugger mutex unable to be acquired : " + str(self))
+
+        return acquired
 
     def __timer_handler_release_hardware_mutex(self) -> None:
         logger.debug("--------------------- timer fired. releasing mutex")
@@ -244,24 +246,31 @@ class DeviceCommsBase(ABC):
             return only once we have feedback that the hardware
             is in a good state
         """
-
         if self._is_logging.isSet():
             logger.info("Traces are already being captured. ignoring start request")
             return
 
-        logger.info("starting to bringup trace capturing...")
-
-        # make sure we do not have the stop request set
-        self._stop_requested.clear()
-        startup_complete_event = threading.Event()
-
         try:
+
+            self.acquire_hardware_mutex()
+            self._stop_requested.clear()
+            logger.info("starting to bringup trace capturing...")
+
+            # make sure we do not have the stop request set
+            startup_complete_event = threading.Event()
+
             self._start_capturing_traces(startup_complete_event)
 
             # wait for the spawned thread to tell us it is completed successfully
             # before we return. this way you can assume that logs are processing
             # when this function returns
+            # it is important not to acquire the hardware mutex until after
+            # the startup process has set the startup_complete_event.
             startup_complete_event.wait()
+
+            self._is_logging.set()
+
+            self.release_hardware_mutex()
 
         except Exception as e:
             print(f"Log Startup Threw Exception: {e}")
@@ -272,8 +281,6 @@ class DeviceCommsBase(ABC):
                 err_msg = f"Could not startup log capturing thread. status:{self._startup_status}"
                 raise SubprocessStartError(err_msg)
 
-        self._is_logging.set()
-
         logger.info("Traces started")
 
         return self._startup_status
@@ -282,25 +289,27 @@ class DeviceCommsBase(ABC):
         """ stop capturing logs. this will stop all services running on your machine
             that interact with the debugger
         """
-
-        if not self._is_logging.isSet():
+        if not self.is_capturing_traces():
             logger.info("Traces are not being captured. ignoring stop request")
             return
 
-        self._stop_requested.set()
-        logger.debug(f"stop requested...{self._stop_requested.isSet()}")
-
         try:
+            self._stop_requested.set()
+            logger.debug(f"stop requested...{self._stop_requested.isSet()}")
+
+            self.acquire_hardware_mutex()
             self._stop_capturing_traces()
+            self._is_logging.clear()
+            self.release_hardware_mutex()
         except Exception as e:
             logger.error("Stop capturing traces exception: {e}")
             raise SubprocessShutdownError(f"Could not shutdown log capturing thread. error:{e}")
 
-        self._is_logging.clear()
         logger.debug("Stop capturing traces returning...")
 
     def wait_for_event(self,
                        required_events: list,
+                       cmd = None,
                        avoided_events: list = None,
                        timeout_ms: int = 10000,
                        trace_collect_pattern: DeviceTraceCollectPattern = DeviceTraceCollectPattern.MATCHING,
@@ -415,6 +424,7 @@ class DeviceCommsBase(ABC):
         return trace_response
 
     def wait_for_trace(self,
+                       cmd: str = None,
                        required_responses: Union[str, List[str]] = None,
                        avoided_responses: Union[str, List[str]] = None,
                        timeout_ms: int = 10000,
@@ -426,6 +436,7 @@ class DeviceCommsBase(ABC):
         """
         wait for a particular trace(s) to be seen.
 
+        cmd - a command to send on the interface first. helpful for cli interactions
         required_responses - string or list of strings to look for
         avoided_responses - string or list of strings that must not be seen. fail
                      immediately if seen
@@ -463,6 +474,10 @@ class DeviceCommsBase(ABC):
         # clear out any old traces
         if (not use_backlog):
             self.dump_traces()
+
+        if cmd is not None:
+            logger.debug(f"Sending cmd: {cmd}")
+            self.send_cmd(cmd)
 
         logger.debug("looking for traces: " +  str(required_responses))
 
@@ -609,7 +624,8 @@ class DeviceCommsBase(ABC):
 
         TODO: figure out what is needed for feedback. stdout? status enum?
         """
-        self.acquire_hardware_mutex()
+        # TODO: determine if these mutexes are needed
+        #self.acquire_hardware_mutex()
         self._send_cmd_to_link_management(cmd)
-        self.release_hardware_mutex()
+        #elf.release_hardware_mutex()
 

@@ -140,7 +140,7 @@ class JLinkDevice(DeviceCommsBase):
             if (len(pending_read_fds) > 0):
 
                 line = self.__jlink_process.stdout.readline().strip()
-                print(line)
+                logger.debug(line)
 
                 jlink_output += line + "\r\n"
 
@@ -207,7 +207,7 @@ class JLinkDevice(DeviceCommsBase):
             JLinkDevice.last_telnet_port_used += 1
             self.__telnet_port = JLinkDevice.last_telnet_port_used - 1
 
-        print(f"start jlink server on port {self.__telnet_port}")
+        logger.debug(f"start jlink server on port {self.__telnet_port}")
 
         jlink_server_shudown_request = threading.Event()
 
@@ -240,18 +240,25 @@ class JLinkDevice(DeviceCommsBase):
 
         # signal to the caller that we're done with the startup process.
         startup_complete_event_listener.set()
-        print("startup complete.... main loop logging...\n\n\n")
 
         # capture data from the device and stick it in our queue
-        while( True ):
+        while not self._stop_requested.isSet():
             line = None
+
+            acquired = self.acquire_hardware_mutex( timeout_ms = 100,
+                                                    except_on_fail = False)
+
+            # this most commonly occurs when shutting down
+            if not acquired:
+                logger.debug("hardware mutex not acquired")
+                continue
 
             #TODO: this wont work on windows, ... how should we do
             # non blocking reads? the process above works except theres
             # no way to kill the process when no logs are being
             # generated
             # other approaches: asyncio -> doesn't support timeouts
-            poll_result = select.select([self.__logging_process.stdout], [],[], 0.005)[0]
+            poll_result = select.select([self.__logging_process.stdout], [],[], 0.5)[0]
 
             # poll will return the fds that are ready. array entry 0 is the
             # fd ready for reading. we only were looking for read on stdout
@@ -259,21 +266,21 @@ class JLinkDevice(DeviceCommsBase):
             if (len(poll_result) > 0):
                 line = self.__logging_process.stdout.readline().strip()
 
-                if (len(line) == 0):
-                    continue
-
-                logger.debug(line)
-
-                self.read_queue.put(line)
+                if len(line) > 0:
+                    logger.debug(line)
+                    self.read_queue.put(line)
 
             if not self.write_queue.empty():
                 msg = self.write_queue.get()
                 self.__logging_process.stdin.write( msg + "\r\n" )
                 self.__logging_process.stdin.flush()
 
-            if (self._stop_requested.isSet()):
-                print("breaking out of logging process loop")
-                break
+            # if we call the self.release_hardware_mutex() here we'll throttle
+            # our read speed too much due to the hardware recovery time.
+            # the hardware recovery time is only for high level operations like
+            # starting, stopping, etc
+            self._hardware_mutex.release()
+
         # wind things down in the reverse order
         logger.debug("process logging stop request")
 
@@ -310,6 +317,7 @@ class JLinkDevice(DeviceCommsBase):
         self.__log_thread = threading.Thread(target = self.__logging_service_thread,
                                        args = [startup_complete_event],
                                        daemon=False)
+        self.__shutdown_complete.clear()
         self.__log_thread.start()
 
         logger.debug("logging thread running...")
@@ -323,13 +331,8 @@ class JLinkDevice(DeviceCommsBase):
         self.__shutdown_complete.wait()
 
         if self.__log_thread.is_alive():
-            print(f"joining log thread...{self._stop_requested}")
             self.__log_thread.join()
             self.__log_thread = None
-        else:
-            print("looging thread is dead already...")
-
-        print("log thread joined...")
 
     def _send_cmd_to_link_management(self, cmd):
         """

@@ -12,7 +12,7 @@ import serial_device
 
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+#    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 logger = logging.getLogger(__name__)
@@ -27,18 +27,18 @@ device = serial_device.SerialCommsDevice(config)
 
 device.start_capturing_traces()
 
-foo = device.wait_for_trace("STEERING", timeout_ms = 5000)
+foo = device.wait_for_trace( cmd = "version",
+                             required_responses = r"VERSION:\s*v(?P<version_major>\d+)\.(?P<version_minor>\d+)\.(?P<version_patch>\d+)",
+                             timeout_ms = 4000)
 
 print(foo)
+assert foo[0], "failed"
 
-print("###############################\nSLEEEEEEEEP 2\n#########################\n\n")
-time.sleep(2)
+print("###############################\n stop\n#########################\n\n")
 
-device.send_cmd("?")
-foo = device.wait_for_trace("write_pin", accumulate_traces=True)
-print(foo)
-
-device.send_cmd_to_link_management("halt")
-
+device.stop_capturing_traces()
+print("###############################\n start  \n#########################\n\n")
+device.start_capturing_traces()
+print("###############################\n stop\n#########################\n\n")
 device.stop_capturing_traces()
 
