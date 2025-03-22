@@ -180,6 +180,15 @@ class JLinkDevice(DeviceCommsBase):
 
         logging_process_cmd = 'JLinkRTTClient -RTTTelnetPort ' + str(telnet_port)
 
+        # Start a new process group on Unix - this helps with being able to
+        # send SIGINT when we want to tear things down
+        if sys.platform.startswith('win'):
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+            preexec_fn = None
+        else:
+            creationflags = 0
+            preexec_fn = os.setsid
+
         #logger.debug("starting rtt [" + jlink_process_cmd + "]")
         self.__logging_process = subprocess.Popen(
                                           ['/bin/sh', '-c', logging_process_cmd],
@@ -187,6 +196,8 @@ class JLinkDevice(DeviceCommsBase):
                                           stdin=subprocess.PIPE,
                                           stderr=subprocess.PIPE,
                                           bufsize=1,
+                                          preexec_fn=preexec_fn,
+                                          creationflags=creationflags,
                                           universal_newlines=True,
                                           encoding="ISO-8859-1")
 
@@ -210,8 +221,6 @@ class JLinkDevice(DeviceCommsBase):
 
         logger.debug(f"start jlink server on port {self.__telnet_port}")
 
-        jlink_server_shudown_request = threading.Event()
-
         # startup jlinkexe
         success = self.__start_jlink_server()
 
@@ -230,9 +239,9 @@ class JLinkDevice(DeviceCommsBase):
         # you hit jlink's driver too hard
         time.sleep(0.5)
 
-        logging_service_shudown_request = threading.Event()
+        logging_service_shutdown_request = threading.Event()
         logger.debug("staring logging process on port [" + str(self.__telnet_port) + "...")
-        self.__start_logging_process(self.__telnet_port, logging_service_shudown_request)
+        self.__start_logging_process(self.__telnet_port, logging_service_shutdown_request)
 
         time.sleep(0.25)
 
@@ -287,16 +296,27 @@ class JLinkDevice(DeviceCommsBase):
 
         # let our services shutdown gracefully.
         # rtt shutdown (startup only)
-        logging_service_shudown_request.set()
-        # jlink server shutdown (startup only)
-        jlink_server_shudown_request.set()
+        logging_service_shutdown_request.set()
         # quit (jlink running)
         self.send_cmd_to_link_management("Exit\r\n")
 
         logger.debug("shutting down RTT client")
         # sending sigint to the process to shut it down
-        self.__logging_process.send_signal(signal.SIGINT)
-        self.__logging_process.wait()
+        try:
+            # sending sigint to the process group to shut it down
+            if sys.platform.startswith('win'):
+                self.__logging_process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                # Send SIGINT to the entire process group
+                os.killpg(os.getpgid(self.__logging_process.pid), signal.SIGINT)
+
+            self.__logging_process.wait(timeout=5)
+
+        except subprocess.TimeoutExpired:
+            logger.debug("something went wrong with RTT teardown. killing...")
+            self.__logging_process.kill()
+            self.__logging_process.wait()
+
         self.__logging_process = None
 
         logger.debug("shutting down JLink Server")
