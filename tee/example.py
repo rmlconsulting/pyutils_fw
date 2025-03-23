@@ -1,5 +1,5 @@
 import logging
-from stdout_capture import StdoutCapture
+from tee import Tee
 
 ##########################################
 # LOGGING
@@ -16,7 +16,7 @@ logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.DEBUG)
 
 # everything printed to stdout after this will go to the log file
-capture_obj = StdoutCapture(".")
+capture_obj = Tee(".")
 
 print("foo")
 # foo should now be in the logs

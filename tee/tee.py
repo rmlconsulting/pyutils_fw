@@ -37,7 +37,7 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-class StdoutCapture():
+class Tee():
 
     # precompiled regex to remove ansi escape chars
     ansi_escape = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
@@ -56,9 +56,11 @@ class StdoutCapture():
 
         # store stdout
         self.orig_stdout = sys.stdout
+        self.orig_stderr = sys.stdout
 
         # redirect stdout to this class
         sys.stdout = self
+        sys.stderr = self
 
         if (not logging_struct):
             logging_struct = "logs/{date:%Y%m}/{date:%Y%m%d}/{date:%Y%m%dT%H%M%S}"
@@ -80,10 +82,14 @@ class StdoutCapture():
         self.init_complete = True
 
     def __del__(self):
+
         sys.stdout = self.orig_stdout
+        sys.stderr = self.orig_stderr
+
+        if not self.outfile.closed:
+            self.outfile.close()
 
     def _get_logging_subdir_structure(self, logging_struct):
-
         """
             given a pattern string, replace all patterns '{pattern}' with
             the appropriate value and return the final string
