@@ -32,11 +32,17 @@ import re
 import serial
 import time
 import logging
+from enum import Enum, auto
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+class NumatoNode(Enum):
+    relay = auto()
+    gpio  = auto()
+    adc   = auto()
 
 class NumatoDevice():
 
@@ -72,16 +78,17 @@ class NumatoDevice():
         self.id         = self.get_id()
 
         self.num_gpio = num_gpio
-        self.num_relays = num_relays
         self.num_adc = num_adc
+        self.num_relays = num_relays
 
-        self.auto_discover_channels( discover_gpio   = (num_gpio == 0),  \
-                                     discover_adc    = (num_adc == 0),   \
-                                     discover_relays = (num_relays == 0) )
+        self.auto_discover_channels( discover_gpio   = (self.num_gpio == 0),  \
+                                     discover_adc    = (self.num_adc == 0),   \
+                                     discover_relays = (self.num_relays == 0) )
 
     def _flush_buffers(self):
-        self.serial.flushInput()
-        self.serial.flushOutput()
+        with self.mutex:
+            self.serial.flushInput()
+            self.serial.flushOutput()
 
         #send an empty command to clear the buffers on the target
         self._execute_serial_cmd('')
@@ -160,11 +167,11 @@ class NumatoDevice():
         #logger.debug("final mask: " + hex(mask))
         return mask
 
-    def _get_max_channels_for_channel_type(self, channel_type):
+    def _get_max_channels_for_channel_node(self, channel_node):
 
-        max_channels = { 'gpio' : self.num_gpio,
-                         'relay' : self.num_relays,
-                         'adc' : self.num_adc}.get(channel_type, 0)
+        max_channels = { NumatoNode.gpio : self.num_gpio,
+                         NumatoNode.relay : self.num_relays,
+                         NumatoNode.adc : self.num_adc}.get(channel_node, 0)
 
         return max_channels
 
@@ -201,17 +208,17 @@ class NumatoDevice():
 
         return mask_chars
 
-    def writeall(self, channel_type, on_channels):
+    def writeall(self, channel_node = NumatoNode.relay, on_channels = []):
         """
-        channel_type - one of 'relay', 'gpio'
+        channel_node - one of 'relay', 'gpio'
         on channels - list of integer channels that should be enabled. start counting at 0
                       all other channels will be disabled
         """
 
-        if channel_type.lower() not in ['relay','gpio']:
-            raise Exception("Invalid channel type")
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         mask_value = self._create_mask_from_channel_num_list(on_channels,
                                                               max_channels)
@@ -220,24 +227,24 @@ class NumatoDevice():
 
         mask = ('{:' + mask_chars + 'x}').format(mask_value)
 
-        response = self._execute_serial_cmd(channel_type + " writeall " + mask)
+        response = self._execute_serial_cmd(channel_node.name + " writeall " + mask)
 
         return response
 
-    def readall(self, channel_type):
+    def readall(self, channel_node):
         """
-        channel_type - one of 'relay', 'gpio'
+        channel_node - one of 'relay', 'gpio'
 
         returns a list of all channels that are in the 'on' state. whatever that means
                 for the given channel type
         """
 
-        if channel_type.lower() not in ['relay','gpio']:
-            raise Exception("Invalid channel type")
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
-        on_mask = int(self._execute_serial_cmd(channel_type + " readall"), 16)
+        on_mask = int(self._execute_serial_cmd(channel_node.name + " readall"), 16)
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         on_channels = self._create_channel_num_list_from_mask(on_mask, max_channels)
 
@@ -257,57 +264,57 @@ class NumatoDevice():
         module_id = self._execute_serial_cmd('set id ' + str(new_id))
         return module_id
 
-    def set(self, channel_type, channel_number):
+    def set(self, channel_node, channel_number):
         """
-        channel_type - one of gpio, relay
+        channel_node - one of gpio, relay
         channel_number - integer value corresponding to channel to activate
         """
-        if channel_type.lower() not in ['gpio', 'relay']:
-            raise Exception("Invalid channel type")
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
         set_cmd = 'set'
-        if channel_type == 'relay':
+        if channel_node == NumatoNode.relay:
             set_cmd = 'on'
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         channel = self._map_channel_num_to_alpha(channel_number, max_channels)
 
-        cmd = '{:s} {:s} {:s}'.format(channel_type, set_cmd, str(channel))
+        cmd = '{:s} {:s} {:s}'.format(channel_node.name, set_cmd, str(channel))
 
         return self._execute_serial_cmd(cmd)
 
-    def clear(self, channel_type, channel_number):
-        if channel_type.lower() not in ['gpio', 'relay']:
-            raise Exception("Invalid channel type")
+    def clear(self, channel_node, channel_number):
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
         clear_cmd = 'clear'
-        if channel_type == 'relay':
+        if channel_node == NumatoNode.relay:
             clear_cmd = 'off'
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         channel = self._map_channel_num_to_alpha(channel_number, max_channels)
 
-        cmd = '{:s} {:s} {:s}'.format(channel_type, clear_cmd, str(channel))
+        cmd = '{:s} {:s} {:s}'.format(channel_node.name, clear_cmd, str(channel))
 
         return self._execute_serial_cmd(cmd)
 
-    def is_set(self, channel_type, channel_number):
+    def is_set(self, channel_node, channel_number):
         '''
         same as read, but for boolean logic, return a boolean
         '''
 
-        if channel_type.lower() not in ['gpio']:
-            raise Exception("Invalid channel type")
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
         is_set = None
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         channel = self._map_channel_num_to_alpha(channel_number, max_channels)
 
-        response = self.read(channel_type, channel)
+        response = self.read(channel_node, channel)
 
         # map response to logical boolean
         if (response == '1' or response == 'on'):
@@ -319,29 +326,50 @@ class NumatoDevice():
 
         return is_set
 
-    def read(self, channel_type, channel_number):
+    def read(self, channel_node, channel_number):
         """
         create a read command for a given channel.
 
-        channel_type - one of 'adc', 'gpio', 'relay'
+        channel_node - one of 'adc', 'gpio', 'relay'
         channel_number - which instance of that channel is being read
         """
 
-        if channel_type.lower() not in ['adc','gpio','relay']:
-            raise Exception("Invalid channel type")
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         channel = self._map_channel_num_to_alpha(channel_number, max_channels)
 
-        value = self._execute_serial_cmd(channel_type + ' read ' + str(channel))
+        value = self._execute_serial_cmd(channel_node.name + ' read ' + str(channel))
 
         if (value == ''):
             value = None
 
         return value
 
-    def set_iodir(self, channel_type, input_channels):
+    def activate_relay(self, relay_num):
+        """
+        Convenience function
+        """
+        self.set(NumatoNode.relay, relay_num)
+
+    def deactivate_relay(self, relay_num):
+        """
+        Convenience function
+        """
+        self.clear(NumatoNode.relay, relay_num)
+
+    def toggle_relay(self, relay_num):
+        """
+        Convenience function
+        """
+        if self.is_set(NumatoNode.relay, relay_num):
+            self.clear(NumatoNode.relay, relay_num)
+        else:
+            self.set(NumatoNode.relay, relay_num)
+
+    def set_iodir(self, channel_node, input_channels):
 
         # create a mask value with 1's corresponding to input channels
         mask_value = self.device._create_mask_from_channel_num_list(input_channels, self.num_gpio)
@@ -353,40 +381,43 @@ class NumatoDevice():
         mask = ('{:' + mask_chars + 'x}').format(mask_value)
 
         #actually execute the cmd
-        return self.device._execute_serial_cmd(channel_type + ' iodir ' + mask)
+        return self.device._execute_serial_cmd(channel_node.name + ' iodir ' + mask)
 
-    def setmask(self, channel_type, mask):
+    def setmask(self, channel_node, mask):
 
-        if channel_type.lower() not in ['gpio']:
-            raise Exception("Invalid channel type")
+        if not isinstance(channel_node, NumatoNode):
+            raise Exception("Invalid channel node")
 
-        max_channels = self._get_max_channels_for_channel_type(channel_type)
+        max_channels = self._get_max_channels_for_channel_node(channel_node)
 
         if (len(mask) * NumatoDevice.CHANNELS_PER_HEX_CHAR > max_channel):
             raise Exception("mask is greater than available channels")
 
-        value = self._execute_serial_cmd(channel_type + ' iomask ' + mask)
+        value = self._execute_serial_cmd(channel_node.name + ' iomask ' + mask)
 
         if (value == ''):
             value = None
 
         return value
 
-    def auto_discover_channels(self, discover_gpio=False, discover_adc=False, discover_relays=False):
-
-        # read gpio/adc/relay at the available max for each numato relay board
-        # and see how high we get before we top out. if you ask to read a gpio/adc/relay
-        # that is beyond the number available, numato returns nothing.
-
-        ports = {}
+    def auto_discover_channels(self, discover_gpio=False, discover_adc=False, discover_relays=False) -> None:
+        """
+        " if you ask to read a gpio/adc/relay that is beyond the number available,
+        " numato returns nothing. We can use this information to determine the
+        " number of each node type that is present.
+        "
+        " It is suggested that you use this in a setup wizard or similar tool
+        " to generate a config file but do not rely on this for each test run
+        " since this behavior may change in the future
+        """
 
         #############################
         #discover num gpio
         #############################
         if (discover_gpio):
+            num_gpio = 0
 
             max_gpio = 128
-            ports["num_gpio"] = 0
 
             # some of the modules respond to commands to read
             # gpio beyond the number available. this is a way
@@ -396,17 +427,20 @@ class NumatoDevice():
                 max_gpio = len(on_mask) * NumatoDevice.CHANNELS_PER_HEX_CHAR
 
             for i in range(0,max_gpio):
-                resp = self.is_set('gpio', i)
+                resp = self.is_set(NumatoNode.gpio, i)
                 if resp is None:
                     break
-                ports["num_gpio"] = i + 1
+                num_gpio = i + 1
+
+            logger.info(f"auto discovered {num_gpio} gpio")
+            self.num_gpio = num_gpio
 
         #############################
         #discover num relays
         #############################
         if (discover_relays):
             max_relays = 128
-            ports["num_relays"] = 0
+            num_relays = 0
 
             on_mask = self._execute_serial_cmd("relay readall")
             if (on_mask):
@@ -414,25 +448,27 @@ class NumatoDevice():
 
             for i in range(0, max_relays):
                 self.num_relays = i
-                resp = self.read('relay', i)
+                resp = self.read(NumatoNode.relay, i)
                 if resp is None:
                     break
-                ports["num_relays"] = i + 1
+                num_relays = i + 1
+
+            logger.info(f"auto discovered {num_relays} relays")
+            self.num_relays = num_relays
 
         #############################
         #discover num adc
         #############################
         if (discover_adc):
-            ports["num_adc"] = 0
+            num_adc = 0
             # we will never have more adc's than gpio
-            max_adc = ports["num_gpio"]
+            max_adc = self.num_gpio
             for i in range(0,max_adc):
-                resp = self.read('adc', i)
+                resp = self.read(NumatoNode.adc, i)
                 if resp is None:
                     break
-                ports["num_adc"] = i + 1
+                num_adc = i + 1
 
-        logger.debug(ports)
-
-        return ports
+            logger.info(f"auto discovered {num_adc} adcs")
+            self.num_adc = num_adc
 
