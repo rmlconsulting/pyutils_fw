@@ -20,7 +20,7 @@ logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.DEBUG)
 
 config = serial_device.SerialCommsDeviceConfig(
-                            serial_device_path = "/dev/tty.usbmodem1101",
+                            serial_device_path = "/dev/tty.usbmodem31201",
                             baud_rate = 115200)
 
 device = serial_device.SerialCommsDevice(config)

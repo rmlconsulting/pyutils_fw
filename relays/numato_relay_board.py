@@ -33,6 +33,7 @@ import serial
 import time
 import logging
 from enum import Enum, auto
+from relay_base import RelayBase
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.
@@ -44,7 +45,7 @@ class NumatoNode(Enum):
     gpio  = auto()
     adc   = auto()
 
-class NumatoDevice():
+class NumatoDevice(RelayBase):
 
     # number of channels represented in a hex char
     CHANNELS_PER_HEX_CHAR = 4
@@ -63,13 +64,20 @@ class NumatoDevice():
         if not os.path.exists( self.path ):
             raise Exception("Could not open Relay path: " + str(path) )
 
-        self.mutex      = threading.RLock()
-        self.serial     = serial.Serial( self.path, \
-                                         baudrate=115200, \
-                                         bytesize=8, \
-                                         parity='N', \
-                                         stopbits=1, \
-                                         timeout=1 )
+        self.serial = serial.Serial( self.path, \
+                                     baudrate=115200, \
+                                     bytesize=8, \
+                                     parity='N', \
+                                     stopbits=1, \
+                                     timeout=1 )
+
+        self.num_gpio = 0
+        self.num_adc = 0
+        self.num_relays = 0
+
+        autosense = (num_relays != 0) or (num_gpio != 0) or (num_adc != 0)
+
+        super().__init__(num_relays, supports_autosense = autosense)
 
         # clear any remnants or partial info in usb or on target
         self._flush_buffers()
@@ -77,16 +85,18 @@ class NumatoDevice():
         self.fw_version = self.get_fw_version()
         self.id         = self.get_id()
 
-        self.num_gpio = num_gpio
-        self.num_adc = num_adc
-        self.num_relays = num_relays
+        # overload anything autosensed
+        if num_gpio != 0:
+            self.num_gpio = num_gpio
 
-        self.auto_discover_channels( discover_gpio   = (self.num_gpio == 0),  \
-                                     discover_adc    = (self.num_adc == 0),   \
-                                     discover_relays = (self.num_relays == 0) )
+        if num_adc != 0:
+            self.num_adc = num_adc
+
+        if num_relays != 0:
+            self.num_relays = num_relays
 
     def _flush_buffers(self):
-        with self.mutex:
+        with self._lock:
             self.serial.flushInput()
             self.serial.flushOutput()
 
@@ -97,7 +107,7 @@ class NumatoDevice():
 
         response = ''
 
-        with self.mutex:
+        with self._lock:
             logger.debug("sending: " + cmd)
             self.serial.write( str.encode(cmd + "\r") )
 
@@ -160,7 +170,7 @@ class NumatoDevice():
             # if we're given an index that is outside of the bounds of the
             # mask then return
             if (i >= max_channels):
-                raise Exception("channel " + str(i) + " is not valid. " + str(max_channels) + " is max value possible for this numato board")
+                raise Exception("channel " + str(i) + " is not valid. " + str(max_channels - 1) + " is max value possible for this numato board")
 
             mask |= (1 << (i))
 
@@ -352,22 +362,46 @@ class NumatoDevice():
         """
         Convenience function
         """
-        self.set(NumatoNode.relay, relay_num)
+        with self._lock:
+            self.set(NumatoNode.relay, relay_num)
+            self._relay_status[ relay_num ] = 1
 
     def deactivate_relay(self, relay_num):
         """
         Convenience function
         """
-        self.clear(NumatoNode.relay, relay_num)
+        with self._lock:
+            self.clear(NumatoNode.relay, relay_num)
+            self._relay_status[ relay_num ] = 0
 
     def toggle_relay(self, relay_num):
         """
         Convenience function
         """
         if self.is_set(NumatoNode.relay, relay_num):
-            self.clear(NumatoNode.relay, relay_num)
+            self.activate_relay( relay_num )
         else:
-            self.set(NumatoNode.relay, relay_num)
+            self.deactivate_relay( relay_num )
+
+    def write_all_relays(self, activated_relays):
+        """
+        Convenience function
+        """
+        self.writeall( channel_node = NumatoNode.relay,
+                       on_channels = activated_relays )
+
+        # keep _relay_status up to date
+        for i in range(0, self.num_relays):
+            if i in activated_relays:
+                self._relay_status[i] = 1
+            else:
+                self._relay_status[i] = 0
+
+    def read_all_relays(self):
+        """
+        Convenience function
+        """
+        return self.readall( channel_node = NumatoNode.relay )
 
     def set_iodir(self, channel_node, input_channels):
 
@@ -399,6 +433,11 @@ class NumatoDevice():
             value = None
 
         return value
+
+    def autosense_hardware(self):
+        self.auto_discover_channels( discover_gpio = True,
+                                     discover_relays = True,
+                                     discover_adc = True)
 
     def auto_discover_channels(self, discover_gpio=False, discover_adc=False, discover_relays=False) -> None:
         """

@@ -1,7 +1,7 @@
-from NumatoRelayBoard import NumatoDevice, NumatoNode
+from numato_relay_board import NumatoDevice, NumatoNode
 import time
 
-board = NumatoDevice(path = "/dev/tty.usbmodem1101")
+board = NumatoDevice(path = "/dev/tty.usbmodem1101", num_relays = 4)
 
 # using set / clear functions
 for i in range(0,board.num_relays):
