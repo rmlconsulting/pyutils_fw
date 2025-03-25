@@ -43,7 +43,7 @@ class Tee():
     ansi_escape = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
 
     def __init__(self, logging_dir, logging_name = "log", \
-            logging_struct = None):
+            logging_structure = None):
 
         # mark that we're initializing. we set it to complete at the bottom
         # of this function. otherwise any print statements that get sent
@@ -62,11 +62,11 @@ class Tee():
         sys.stdout = self
         sys.stderr = self
 
-        if (not logging_struct):
-            logging_struct = "logs/{date:%Y%m}/{date:%Y%m%d}/{date:%Y%m%dT%H%M%S}"
+        if (not logging_structure):
+            logging_structure = "logs/{date:%Y%m}/{date:%Y%m%d}/{date:%Y%m%dT%H%M%S}"
 
         # within the logging directory, figure out the subdirectory
-        logging_subdirs = self._get_logging_subdir_structure(logging_struct)
+        logging_subdirs = self._get_logging_subdir_structure(logging_structure)
 
         # store the absolute path of the logging subdir for this test run
         self._logging_dir = os.path.abspath(logging_dir + "/" + logging_subdirs)
@@ -89,24 +89,24 @@ class Tee():
         if not self.outfile.closed:
             self.outfile.close()
 
-    def _get_logging_subdir_structure(self, logging_struct):
+    def _get_logging_subdir_structure(self, logging_structure):
         """
             given a pattern string, replace all patterns '{pattern}' with
             the appropriate value and return the final string
         """
 
-        if (logging_struct is None):
-            raise Exception("illegal value for logging structure: " + str(logging_struct))
+        if (logging_structure is None):
+            raise Exception("illegal value for logging structure: " + str(logging_structure))
 
         currtime = datetime.datetime.now()
 
         # start off with the string with patterns. we're going to
         # replace one pattern at a time
-        log_subdir = logging_struct
+        log_subdir = logging_structure
 
         # we're going to run this search in a couple places so go ahead and
         # precompile this pattern
-        pattern_search = re.compile("^(.*?)\{([^}]+)\}(.*)$")
+        pattern_search = re.compile(r"^(.*?)\{([^}]+)\}(.*)$")
 
         # search the logging struct string for a pattern
         logging_struct_match = pattern_search.match(log_subdir)
