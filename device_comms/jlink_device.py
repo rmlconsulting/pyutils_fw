@@ -277,11 +277,12 @@ class JLinkDevice(DeviceCommsBase):
                 line = self.__logging_process.stdout.readline().strip()
 
                 if len(line) > 0:
-                    logger.debug(line)
+                    logger.info(f"<-- {line}")
                     self.read_queue.put(line)
 
             if not self.write_queue.empty():
                 msg = self.write_queue.get()
+                logger.info(f"--> {msg}")
                 self.__logging_process.stdin.write( msg + "\r\n" )
                 self.__logging_process.stdin.flush()
 

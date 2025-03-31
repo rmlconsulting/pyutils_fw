@@ -129,7 +129,7 @@ class SerialCommsDevice(DeviceCommsBase):
                         if len(trace) > 0:
                             data_read = True
 
-                            logger.log(logging.DEBUG, f"<-- {trace}")
+                            logger.info(f"<-- {trace}")
 
                             # Put the trace into the read_queue
                             if self.read_queue is not None:
@@ -145,7 +145,7 @@ class SerialCommsDevice(DeviceCommsBase):
 
                         if cmd is not None:
                             data_written = True
-                            logger.debug(f"--> {cmd}")
+                            logger.info(f"--> {cmd}")
                             ser.write( (cmd + "\n").encode("latin-1") )
 
                     self.release_hardware_mutex()
