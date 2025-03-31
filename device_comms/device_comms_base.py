@@ -618,6 +618,9 @@ class DeviceCommsBase(ABC):
             logger.error("cmd_str must be supplied")
             return False
 
+        if not self.is_capturing_traces():
+            self.start_capturing_traces()
+
         self.write_queue.put( cmd_str )
 
     def send_cmd_to_link_management(self, cmd) -> bool:
@@ -632,6 +635,10 @@ class DeviceCommsBase(ABC):
         """
         # TODO: determine if these mutexes are needed
         #self.acquire_hardware_mutex()
+
+        if not self.is_capturing_traces():
+            self.start_capturing_traces()
+
         self._send_cmd_to_link_management(cmd)
         #elf.release_hardware_mutex()
 
