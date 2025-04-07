@@ -41,6 +41,8 @@ import logging
 from dataclasses import dataclass
 from device_comms_base import DeviceCommsBase, StartupStatus
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.
 logger = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ class JLinkTransportConfig:
     interface: JLinkTransportInterface = JLinkTransportInterface.SWD
     speed: int = 64000
     hardware_recovery_time_sec: int = 2
+    power_on: bool = False
 
 class JLinkDevice(DeviceCommsBase):
 
@@ -88,6 +91,15 @@ class JLinkDevice(DeviceCommsBase):
          start the jlink server in its own thread. i.e. JLinkExe
          caller should hold the debugger mutex
         """
+
+        if self.__config.power_on:
+            power_on_command = f"JlinkExe -CommanderScript {current_dir}/power_on.jlink"
+
+            if self.__config.debugger_sn:
+                power_on_command += f" -SelectEmuBySn {self.__config.debugger_sn}"
+
+            output = subprocess.run(power_on_command, shell=True, capture_output=True, text=True)
+            print(output)
 
         jlink_process_cmd = 'JLinkExe ' + \
                                f" -device {self.__config.target_device} " + \
@@ -141,6 +153,10 @@ class JLinkDevice(DeviceCommsBase):
             if (len(pending_read_fds) > 0):
 
                 line = self.__jlink_process.stdout.readline().strip()
+
+                if len(line) == 0:
+                    continue
+
                 logger.debug(line)
 
                 jlink_output += line + "\r\n"
