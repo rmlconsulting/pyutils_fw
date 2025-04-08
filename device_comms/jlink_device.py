@@ -73,7 +73,7 @@ class JLinkDevice(DeviceCommsBase):
     def __init__(self, config_object):
 
         assert isinstance(config_object, JLinkTransportConfig), \
-                "JlinkTransport config param must be an instance of JlinkTransportConfig"
+                "JLinkTransport config param must be an instance of JLinkTransportConfig"
 
         super().__init__(name = config_object.name, hardware_recovery_time_sec = config_object.hardware_recovery_time_sec)
 
@@ -93,7 +93,7 @@ class JLinkDevice(DeviceCommsBase):
         """
 
         if self.__config.power_on:
-            power_on_command = f"JlinkExe -CommanderScript {current_dir}/power_on.jlink"
+            power_on_command = f"JLinkExe -CommanderScript {current_dir}/power_on.jlink"
 
             if self.__config.debugger_sn:
                 power_on_command += f" -SelectEmuBySn {self.__config.debugger_sn}"

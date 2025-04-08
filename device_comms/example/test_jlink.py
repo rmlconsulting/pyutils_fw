@@ -35,7 +35,7 @@ logger.setLevel(logging.DEBUG)
 ##########################################
 # some example device configs
 #config = jlink_device.JLinkTransportConfig( "NRF52832_XXAA" )
-config = jlink_device.JLinkTransportConfig( "STM32G491VE", speed=5000 )
+config = jlink_device.JLinkTransportConfig( "STM32G491VE", speed=5000, power_on=True )
 
 device = jlink_device.JLinkDevice(config)
 
