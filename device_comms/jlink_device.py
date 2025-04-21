@@ -84,7 +84,7 @@ class JLinkDevice(DeviceCommsBase):
         self.__shutdown_complete = threading.Event()
 
     def __str__(self):
-        return f"JLinkDevice(server port:{self.__telnet_port}. isLogging:{self._is_logging.isSet()}. stop:{self._stop_requested.isSet()}"
+        return f"JLinkDevice(server port:{self.__telnet_port}. isLogging:{self._is_logging.is_set()}. stop:{self._stop_requested.is_set()}"
 
     def __start_jlink_server(self):
         """
@@ -133,7 +133,7 @@ class JLinkDevice(DeviceCommsBase):
 
         while(now() - start_ms < timeout_ms):
 
-            if self._stop_requested.isSet():
+            if self._stop_requested.is_set():
                 logger.info("SHUTDOWN REQUESTED....")
                 break
 
@@ -220,7 +220,7 @@ class JLinkDevice(DeviceCommsBase):
         # get rid of the segger jlink header garbage
         for line in self.__logging_process.stdout:
 
-            if stop_requested.isSet():
+            if stop_requested.is_set():
                 return false
 
             if re.search("Process: JLinkExe", line):
@@ -268,7 +268,7 @@ class JLinkDevice(DeviceCommsBase):
         startup_complete_event_listener.set()
 
         # capture data from the device and stick it in our queue
-        while not self._stop_requested.isSet():
+        while not self._stop_requested.is_set():
             line = None
 
             acquired = self.acquire_hardware_mutex( timeout_ms = 100,

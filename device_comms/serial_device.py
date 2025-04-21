@@ -71,8 +71,8 @@ class SerialCommsDevice(DeviceCommsBase):
 
         return f"SerialCommsDevice(path:{self.__config.serial_device_path}." + \
                f" baudrate:{self.__config.baud_rate}." + \
-               f" isLogging:{self._is_logging.isSet()}." + \
-               f" stop:{self._stop_requested.isSet()}" + \
+               f" isLogging:{self._is_logging.is_set()}." + \
+               f" stop:{self._stop_requested.is_set()}" + \
                ")"
 
     def __logging_service_thread(self, startup_complete_event_listener: threading.Event):
@@ -107,7 +107,7 @@ class SerialCommsDevice(DeviceCommsBase):
                 # Signal to the caller that the hardware is in a good state.
                 startup_complete_event_listener.set()
 
-                while not self._stop_requested.isSet():
+                while not self._stop_requested.is_set():
 
                     acquired = self.acquire_hardware_mutex( timeout_ms = 100,
                                                             except_on_fail = False)

@@ -132,7 +132,7 @@ class DeviceCommsBase(ABC):
         self._hardware_recovery_time_sec = hardware_recovery_time_sec
 
     def __str__(self):
-        return f"CommsDevice(name:{self.name}. isLogging:{self._is_logging.isSet()}. stop:{self._stop_requested.isSet()}"
+        return f"CommsDevice(name:{self.name}. isLogging:{self._is_logging.is_set()}. stop:{self._stop_requested.is_set()}"
 
     def does_device_exist(self, device_path):
         """
@@ -226,7 +226,7 @@ class DeviceCommsBase(ABC):
             self._hardware_mutex.release()
 
     def is_capturing_traces(self) -> bool:
-        return self._is_logging.isSet()
+        return self._is_logging.is_set()
 
     @abstractmethod
     def _start_capturing_traces(self, startup_complete_event: threading.Event) -> None:
@@ -248,7 +248,7 @@ class DeviceCommsBase(ABC):
             return only once we have feedback that the hardware
             is in a good state
         """
-        if self._is_logging.isSet():
+        if self._is_logging.is_set():
             logger.info("Traces are already being captured. ignoring start request")
             return
 
@@ -297,7 +297,7 @@ class DeviceCommsBase(ABC):
 
         try:
             self._stop_requested.set()
-            logger.debug(f"stop requested...{self._stop_requested.isSet()}")
+            logger.debug(f"stop requested...{self._stop_requested.is_set()}")
 
             self.acquire_hardware_mutex()
             self._stop_capturing_traces()
