@@ -299,7 +299,7 @@ class JLinkDevice(DeviceCommsBase):
             if not self.write_queue.empty():
                 msg = self.write_queue.get()
                 logger.info(f"--> {msg}")
-                self.__logging_process.stdin.write( msg + "\r\n" )
+                self.__logging_process.stdin.write( f"{msg}\r\n" )
                 self.__logging_process.stdin.flush()
 
             # if we call the self.release_hardware_mutex() here we'll throttle
@@ -382,7 +382,7 @@ class JLinkDevice(DeviceCommsBase):
         """
         if self.__jlink_process:
 
-            self.__jlink_process.stdin.write( cmd )
+            self.__jlink_process.stdin.write( f"{cmd}" )
             self.__jlink_process.stdin.flush()
 
             return True

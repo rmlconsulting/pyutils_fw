@@ -146,7 +146,7 @@ class SerialCommsDevice(DeviceCommsBase):
                         if cmd is not None:
                             data_written = True
                             logger.info(f"--> {cmd}")
-                            ser.write( (cmd + "\n").encode("latin-1") )
+                            ser.write( (f"{cmd}\n").encode("latin-1") )
 
                     self.release_hardware_mutex()
 

@@ -321,7 +321,7 @@ class DeviceCommsBase(ABC):
 
         # event map must be set first
         if not self.trace_event_map:
-            return None
+            return None, None, None
 
         #get the traces associated to a particular event
         required_traces = self.get_traces_for_events(required_events)
@@ -483,7 +483,7 @@ class DeviceCommsBase(ABC):
 
         if cmd is not None:
             logger.debug(f"Sending cmd: {cmd}")
-            self.send_cmd(cmd)
+            self.send_cmd(str(cmd))
 
         logger.debug("looking for traces: " +  str(required_responses))
 
@@ -534,7 +534,7 @@ class DeviceCommsBase(ABC):
                                 matched_something = True
 
                                 if return_on_first_match or len(required_responses) == 0:
-                                    logger.debug("No more matches required. Returning...{return_on_first_match}.{required_responses}")
+                                    logger.debug(f"No more matches required. Returning...{return_on_first_match}.{required_responses}")
                                     # no need to look at any more data
                                     stop_processing = True
                                     success = True
