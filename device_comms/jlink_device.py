@@ -99,7 +99,7 @@ class JLinkDevice(DeviceCommsBase):
                 power_on_command += f" -SelectEmuBySn {self.__config.debugger_sn}"
 
             output = subprocess.run(power_on_command, shell=True, capture_output=True, text=True)
-            print(output)
+            logger.debug(output)
 
         jlink_process_cmd = 'JLinkExe ' + \
                                f" -device {self.__config.target_device} " + \
