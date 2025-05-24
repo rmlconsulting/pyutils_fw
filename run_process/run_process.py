@@ -146,10 +146,11 @@ class RunProcess():
                         parent process
         """
 
-        p = subprocess.Popen(['/bin/sh', '-c', cmd],
-                             encoding="ISO-8859-1",
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT)
+        p = subprocess.Popen( cmd,
+                              shell=True,
+                              encoding="ISO-8859-1",
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT)
 
         # update the value of the PID from the subprocess that was generated
         # this var type needs to be Value() to be managed correctly from a
@@ -289,6 +290,9 @@ class RunProcess():
                 #print("joining...:" + str(self.__subprocess_pid.value))
                 self.__process.terminate()
                 self.__process.join()
+
+        if success is None:
+            success = False
 
         return (success, traces_to_return.strip(), resp_req)
 
