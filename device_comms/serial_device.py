@@ -82,7 +82,7 @@ class SerialCommsDevice(DeviceCommsBase):
             write_queue and sending it out to the target device.
         """
 
-        logger.debug("Starting logging service thread... [{self.__config.serial_device_path)}")
+        logger.debug(f"Starting logging service thread... [{self.__config.serial_device_path}]")
 
         device_path = self.does_device_exist( self.__config.serial_device_path )
 

@@ -156,7 +156,10 @@ class DeviceCommsBase(ABC):
         Returns:
             str: device path if device exists, None otherwise
         """
-
+        # Expand environment variables and user home (~)
+        expanded_device = os.path.abspath( \
+                          os.path.expanduser( \
+                          os.path.expandvars( device_path )))
 
         # Check for Windows platform and if the device looks like a COM port
         if sys.platform.startswith("win") and expanded_device.upper().startswith("COM"):
@@ -170,11 +173,6 @@ class DeviceCommsBase(ABC):
             return expanded_device.upper() in ports
 
         else:
-
-            # Expand environment variables and user home (~)
-            expanded_device = os.path.abspath( \
-                              os.path.expanduser( \
-                              os.path.expandvars( device_path )))
 
             if os.path.exists(expanded_device):
                 return expanded_device
