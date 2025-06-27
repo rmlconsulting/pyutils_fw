@@ -358,30 +358,30 @@ class NumatoDevice(RelayBase):
 
         return value
 
-    def activate_relay(self, relay_num):
+    def activate_relay(self, relay_number):
         """
         Convenience function
         """
         with self._lock:
-            self.set(NumatoNode.relay, relay_num)
-            self._relay_status[ relay_num ] = 1
+            self.set(NumatoNode.relay, relay_number)
+            self._relay_status[ relay_number ] = 1
 
-    def deactivate_relay(self, relay_num):
+    def deactivate_relay(self, relay_number):
         """
         Convenience function
         """
         with self._lock:
-            self.clear(NumatoNode.relay, relay_num)
-            self._relay_status[ relay_num ] = 0
+            self.clear(NumatoNode.relay, relay_number)
+            self._relay_status[ relay_number ] = 0
 
-    def toggle_relay(self, relay_num):
+    def toggle_relay(self, relay_number):
         """
         Convenience function
         """
-        if self.is_set(NumatoNode.relay, relay_num):
-            self.activate_relay( relay_num )
+        if self.is_set(NumatoNode.relay, relay_number):
+            self.activate_relay( relay_number )
         else:
-            self.deactivate_relay( relay_num )
+            self.deactivate_relay( relay_number )
 
     def write_all_relays(self, activated_relays):
         """
