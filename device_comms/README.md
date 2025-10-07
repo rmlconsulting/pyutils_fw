@@ -142,6 +142,51 @@ success, events, remaining_search = device.wait_for_event( required_events = Eve
 
 Dealing in Events where possible is highly encouraged. in order to keep the examples as simple as possible we will show most examples in the more basic string string processing, but you should be able to replace wait\_for\_trace and wait\_for\_event
 
+## Interface 3: Raw Read/Write Queue
+
+We won't spend too much time on this, but it is useful for developing your own logging/graphing tools, for instance, so it is worth noting. You can choose to directly monitor the read queue from the device class after you start the logging service. from there you can then block on new data in the Queue.queue objects which are thread safe.
+
+in this example, assume we get back a string of ascii chars that represent a comma separated list of data following a certain preamble as shown below:
+
+"live data:1,2,3,4,1,2,3,4,..."
+
+```Python
+import re
+
+# this call will spin up the logging thread which will immediately put any incoming data into the read queue
+device.start_capturing_traces()
+
+
+# shutdown is assumed to be a threading class event. perhaps it is set when you
+# intercept 'Ctrl-C' so this process shuts down gracefully.
+while( !shutdown.is_set() ):
+    if device.read_queue.empty():
+        # if we have no data sleep for a bit to not chew up the processor
+        time.sleep(0.001)
+    else:
+        line = self.read_queue.get_nowait().strip()
+
+    if line.startswith("live data:"):
+        # 1. split on ':' and ','
+        # 2. use only index 1 onwards (index 0 will be "live data")
+        # 3. convert elements from string to int
+        new_data = [int(x) for x in re.split(r'[:,]', line)[1:]]
+    else:
+        # this is some other data coming through
+        pass
+
+    #new_data = ['1','2','3','4','1','2','3','4',...]
+
+    # TODO: do something with new_data like plotting or logging
+
+# cleanup the resource
+device.stop_capturing_traces()
+
+```
+
+that is all for the raw read/write queue. very helpful in some circumstances but pretty simple.
+the rest of this readme will focus on the usage of the trace & event interfaces
+
 # Parameter Examples
 
 showing how these parameters is used is best done through examples.
