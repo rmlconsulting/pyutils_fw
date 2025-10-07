@@ -67,7 +67,7 @@ device.start_capturing_traces()
 
 ## Interface 1: The Command Driven Interface
 
-Interacting with the message interface is pretty simple. Most fundamentally, you can send messages and wait for reponses:
+Interacting with the message interface is pretty simple. Most fundamentally, you can send messages and wait for reponses by using the wait\_for\_trace() function:
 
 ```Python
 device.send_cmd("echo hello world")
@@ -104,7 +104,11 @@ in wait\_for\_trace() and wait\_for\_event() you get a lot of configurability. T
 
 ## Interface 2: Event Driven Interface
 
-Often times you will end up using the same strings over and over again. To make this more maintainable, we'll use the concepts of Events. An Event may be one of a few strings where the string definitions are centrally managed wherever you decide. The only major change from the message / ascii interface is this abstraction layer. they both use the same parameters in the same way. Use of the event interface is more appropriate for larger projects like an automated test suite, though you can freely interchange between event and message interfaces at will.
+Often times you will end up using the same strings over and over again. To make this more maintainable, we'll use the concepts of Events.
+
+the fundamental operation is nearly identical to the wait\_for\_trace() function. it is called wait\_for\_event().
+
+An Event is a caller defined enum and a corresponding event to regex mapping that is centrally managed by the caller. The only major change from the message / ascii interface is this abstraction layer. Both wait\_for\_trace() and wait\_for\_event() use essentially the same parameters in the same way. Use of the event interface is more appropriate for larger projects like an automated test suite, though you can freely interchange between event and message interfaces at will.
 
 ```Python
 from enum import Enum, auto
@@ -161,6 +165,7 @@ while( !shutdown.is_set() ):
     if device.read_queue.empty():
         # if we have no data sleep for a bit to not chew up the processor
         time.sleep(0.001)
+        continue
     else:
         line = self.read_queue.get_nowait().strip()
 
