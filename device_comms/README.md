@@ -65,7 +65,7 @@ device.start_capturing_traces()
 
 ```
 
-## Interface 1: The message Interface Parameters
+## Interface 1: The Command Driven Interface
 
 Interacting with the message interface is pretty simple. Most fundamentally, you can send messages and wait for reponses:
 
@@ -92,8 +92,6 @@ in wait\_for\_trace() and wait\_for\_event() you get a lot of configurability. T
 * <strong>return_on_first_match</strong> (optional. default=False) - return on any found resp\_req instead of waiting for all of resp\_req.
 * <strong>use_backlog</strong> (optional. default=True) - Traces are always accumulating. should we use the traces we've already accumulated when looking for traces? false will cause the trace queue to be cleared first
 
-<strong>Note:</strong> There are 2 main ways to set the end of the cmd processing, by setting a response(s) that is required or by setting the 'run\_to\_completion' flag to true. Without one of these set, the cmd will likely be issued and return before any data has been processed.
-
 ## Return
 
 * was\_successful
@@ -104,7 +102,7 @@ in wait\_for\_trace() and wait\_for\_event() you get a lot of configurability. T
 * traces - stdout from the cmd or a list of dictionaries containing traces and meta data (more on this below)
 * responses\_remaining - upon returning, what required responses have not yet been found? helpful for troubleshooting failures as well as scenarios where you want to react to a series of async messages but only once. (see design patterns below)
 
-## Interface 2: Event Interface
+## Interface 2: Event Driven Interface
 
 Often times you will end up using the same strings over and over again. To make this more maintainable, we'll use the concepts of Events. An Event may be one of a few strings where the string definitions are centrally managed wherever you decide. The only major change from the message / ascii interface is this abstraction layer. they both use the same parameters in the same way. Use of the event interface is more appropriate for larger projects like an automated test suite, though you can freely interchange between event and message interfaces at will.
 
@@ -142,7 +140,7 @@ success, events, remaining_search = device.wait_for_event( required_events = Eve
 
 Dealing in Events where possible is highly encouraged. in order to keep the examples as simple as possible we will show most examples in the more basic string string processing, but you should be able to replace wait\_for\_trace and wait\_for\_event
 
-## Interface 3: Raw Read/Write Queue
+## Interface 3: Raw Read/Write Queue Interactions
 
 We won't spend too much time on this, but it is useful for developing your own logging/graphing tools, for instance, so it is worth noting. You can choose to directly monitor the read queue from the device class after you start the logging service. from there you can then block on new data in the Queue.queue objects which are thread safe.
 
