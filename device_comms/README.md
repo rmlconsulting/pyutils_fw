@@ -1,14 +1,10 @@
 # DeviceComms
 
-The DeviceComms library allows you to open up a comms channel with hardware
-devices to the end goal of being able to easily use the data streams coming
-they produce.
+The DeviceComms library allows you to open up a comms channel with hardware devices to the end goal of being able to easily use the data streams coming they produce.
 
-Ultimately, both ascii and binary interfaces will be supported, but at this
-time, only ascii interfaces are supported. stay tuned.
+Ultimately, both ascii and binary interfaces will be supported across all transports, but at this time, only ascii interfaces are supported. stay tuned.
 
-For now, this library targets linux and MacOS. if you want support for windows,
-email me at ryan@rmlconsulting.dev
+![alt text](supported_platforms.jpeg)
 
 ### Design Goals
 
@@ -40,7 +36,7 @@ In order to dive into examples lets get setup first.
 ### Setup
 pip install requirements.txt
 
-that's it. now just connect a device over serial, jtag (jlink only), websocket (connect it to your local network).
+that's it. now just connect a device over serial, jtag (jlink swd only for now), ... (coming soon) websocket (connect it to your local network).
 
 ## quick start
 
@@ -80,7 +76,8 @@ device.wait_for_trace("hello world")
 
 # or combine it together
 
-device.send_cmd_and_wait_for_trace("echo hello world", "hello world")
+device.wait_for_trace(cmd = "echo hello world",
+                      required_traces = "hello world")
 ```
 
 in all '...wait\_for\_trace()' functions you get a lot of configurability. This configurability on waiting for responses in the way you need really makes the library.
@@ -92,7 +89,7 @@ in all '...wait\_for\_trace()' functions you get a lot of configurability. This 
 * <strong>accumulate_traces</strong> (optional. default=False) - should we return everything printed to stdout? by default we only return the last stdout trace we received.
 * <strong>cmd_recovery_time_ms</strong> (optional. default=0) - after we complete the desired cmd processing, how long should we wait before tearing down processes and subprocesses. this can be helpful with some larger complexity software services or using hardware programmers that may require some recovery before disconnect for stability purposes.
 * <strong>return_on_first_match</strong> (optional. default=False) - return on any found resp\_req instead of waiting for all of resp\_req.
-* <strong>quiet</strong> (optional. default=False) - cmd processes stdout is intercepted. should we also print it to our stdout?
+* <strong>use_backlog</strong> (optional. default=True) - Traces are always accumulating. should we use the traces we've already accumulated when looking for traces? false will cause the trace queue to be cleared first
 
 <strong>Note:</strong> There are 2 main ways to set the end of the cmd processing, by setting a response(s) that is required or by setting the 'run\_to\_completion' flag to true. Without one of these set, the cmd will likely be issued and return before any data has been processed.
 
@@ -103,115 +100,245 @@ in all '...wait\_for\_trace()' functions you get a lot of configurability. This 
      1) the required parameters, if any, were found.
      2) no avoided responses, if any, were found
      3) we did not timeout before completing processing as directed
-* traces - stdout from the cmd
-* responses\_remaining - upon returning, what required responses have not yet been found? helpful for troubleshooting failures as well as scenarios where you want to react to a series of async messages but only once.
+* traces - stdout from the cmd or a list of dictionaries containing traces and meta data (more on this below)
+* responses\_remaining - upon returning, what required responses have not yet been found? helpful for troubleshooting failures as well as scenarios where you want to react to a series of async messages but only once. (see design patterns below)
 
-# Examples
+## Interface 2: Event Interface
 
-### Example 1: Run process until process completion
-
-Run a process until the process is over
+Often times you will end up using the same strings over and over again. To make this more maintainable, we'll use the concepts of Events. An Event may be one of a few strings where the string definitions are centrally managed wherever you decide. The only major change from the message / ascii interface is this abstraction layer. they both use the same parameters in the same way. Use of the event interface is more appropriate for larger projects like an automated test suite, though you can freely interchange between event and message interfaces at will.
 
 ```Python
-process_obj = RunProcess(cmd = "echo 'foo'", run_to_completion=True)
+from enum import Enum, auto
 
-wasSuccessful, traces, resp_rem = process_obj.start()
+# at some central location, create a definition of events
+class Events(Enum):
+    BUTTON_PRESS = auto()
+    BUTTON_RELEASE = auto()
+    BOGUS_EVENT = auto()
 
-# wasSuccessful is true
+# also create a corresponding map of <event> : <regex string>
+# this will allow us to use the Events definitions instead of dealing in raw strings.
+# the only raw strings exist right here and can be centrally managed
+global_event_map = {
+                       Events.BUTTON_PRESS : r"Button (?P<button_num>\d+) pressed",
+                       Events.BUTTON_RELEASE : r"Button (?P<button_num>\d+) released",
+                       # for illustration only:
+                       Events.BOGUS_EVENT : r"SomeTraceThatWillNeverBeProduced",
+                    }
+
+# tell whatever device you instantiated about your event mapping
+device.set_event_map( global_event_map )
+
+###############################################################################
+# now that we have this setup, we can deal in events instead of strings
+###############################################################################
+
+# if we are waiting for some button press event, we can do this:
+
+success, events, remaining_search = device.wait_for_event( required_events = Events.BUTTON_PRESS )
+
 ```
 
+Dealing in Events where possible is highly encouraged. in order to keep the examples as simple as possible we will show most examples in the more basic string string processing, but you should be able to replace wait\_for\_trace and wait\_for\_event
 
-### Example 2: Run process untill expected responses are seen on stdout
+# Parameter Examples
+
+showing how these parameters is used is best done through examples.
+
+In all of these examples, assume that you have a CLI command 'echo' that will print out the argument you gave it.
+
+so running
+
+| > echo foo
+
+will return
+
+| foo
+
+Also assume that we have created a device object already. To improve readability we will not repeate this code. The init code will look like one of the following:
+
+## Serial Device:
 
 ```Python
-expected_response = ["bar", "foo"]
+serial_config = serial_device.SerialCommsDeviceConfig(
+                            serial_device_path = "/dev/tty.usbmodem31201",
+                            baud_rate = 115200)
 
-wasSuccessfuly, _ = RunProcess(cmd = "echo foo && sleep 1 && echo bar && sleep 100",
-                               resp_expected = expected_response).start()
-
-print(f"success: {wasSuccessful}")
+serial_device = serial_device.SerialCommsDevice(serial_config)
 ```
 
-### Example 3: Run process repeatedly
-
-You can create a process that will be run multiple times
+## JLink Device:
 
 ```Python
-ip_addr = "127.0.0.1"
-expected_response = f"%d bytes from {ip_addr}"
+jlink_config = jlink_device.JLinkTransportConfig( "STM32G491VE", speed=4000 )
 
-process_obj = RunProcess(cmd = f"ping {ip_addr}",
-                         resp_expected = expected_response)
-
-success_count = 0
-
-for int i in range(0,5):
-
-    wasSuccessful, _ = process_obj.start()
-
-    if wasSuccessful:
-        success_count += 1
-
-# success_count should be 5
+jlink_device = jlink_device.JLinkDevice(jlink_config)
 ```
 
-### Example 4: Fail on unexpected or "bad" responses
+## Websocket Device:
 
-Processes that create bad responses will fail and return immediately
+coming soon
+
+### Base Example: Simple serial comms using raw trace strings
 
 ```Python
-bad_ip_addr = "1921234.168.1.100"
+success, traces, _ = device.wait_for_trace( cmd = "echo VERSION:1.2.3",
+                             required_responses = r"VERSION:\s*v\d+\.\d+\.\d+",
+                             timeout_ms = 4000)
 
-avoided_responses = ["Unknown host", "Request timeout"]
+assert(success)
 
-process_obj = RunProcess(cmd = f"ping {bad_ip_addr} && sleep 100",
-                         resp_req = f"%d bytes from {bad_ip_addr}",
-                         resp_avoid = avoided_responses)
+print(f"found desired traces: {traces}")
 
-wasSuccessful, traces, remaining_resp = process_obj.start()
+# expected to see 'found desired traces: VERSION:1.2.3'
 
-# wasSuccessful should be false immediately (i.e. before sleep 100)
+the default trace_response_format for wait_for_trace is TraceResponseFormat.RAW_TRACES. waiting for a trace yields a trace back.
+
 ```
 
-### Example 5: Timeout
+### Trace Response Format: Simple serial comms using raw trace strings, with processed results
 
-Processes that run too long will be killed unsuccessfully.
+if we give named regex fields and request the results be processed then we get back a more useable structure. specifically, any named regex groups will have their name : value pair added to the resulting trace object as shown below
 
 ```Python
-wasSuccessful, _ = RunProcess( cmd = f"sleep 1000",
-                               timeout_ms = 2500).start()
+success, traces, _ = serial_device.wait_for_trace( cmd = "echo VERSION:1.2.3",
+                             required_responses = r"VERSION:\s*v(?P<version_major>\d+)\.(?P<version_minor>\d+)\.(?P<version_patch>\d+)",
+                             trace_response_format = TraceResponseFormat.PROCESSED_RESPONSES
+                             )
 
-# will return after 2.5 seconds. wasSuccessful should be false
+assert(success)
+
+print(f"found desired traces: {traces}")
+
+# now the traces results will look like:
+# traces : [ {
+#               _trace: "VERSION:1.2.3",
+#               _regex_search_string : r"VERSION:\s*v(?P<version_major>\d+)\.(?P<version_minor>\d+)\.(?P<version_patch>\d+)",
+#               version_major: "1",
+#               version_minor: "2",
+#               version_patch: "3",
+#            },
+#          ]
+#
+
 ```
 
-### Example 6: Accumulated traces will return everything from stdout
+### Device Trace Collection Pattern: when parsing raw traces, control which trace we return
 
-By default, just the last matching trace from stdout will be returned
+in the event we have many traces we are looking for, we may want everything that came through the CLI (ALL), we may want just the last matching trace (LAST\_ONLY) or we may want all of the traces in our set of responses (MATCHING). lets say we are looking for 3 traces:
 
 ```Python
-wasSuccessful, traces,_ = RunProcess( cmd = f"echo foo && echo bar",
-                                      run_to_completion = True,
-                                      accumulate_traces=True ).start()
 
-# traces should be 2 lines now:
-# foo
-# bar
+expected_strings = [r"foo\d", r"bar\d", r"baz\d"]
+
+# lets create a command that will generate 3 lines from the CLI with the echo command
+cmd = "echo foo1\nbar2\nbaz3"
+
+# Now lets use the 3 possible values.
+
+########################
+# return all matches
+########################
+success, traces, _ = device.wait_for_trace( cmd = cmd,
+                             required_responses = expected_strings,
+                             trace_collection_pattern = DeviceTraceCollectPattern.MATCHING,
+                             )
+
+assert(success)
+
+# traces = ['foo1', 'bar2', 'baz3']
+
+########################
+# return all traces while we searched
+########################
+success, traces, _ = device.wait_for_trace( cmd = cmd,
+                             required_responses = expected_strings,
+                             trace_collection_pattern = DeviceTraceCollectPattern.ALL,
+                             )
+
+assert(success)
+
+# traces = ['foo1', 'bar2', 'some other system trace', 'baz3']
+
+########################
+# return last trace
+########################
+success, traces, _ = device.wait_for_trace( cmd = cmd,
+                             required_responses = expected_strings,
+                             trace_collection_pattern = DeviceTraceCollectPattern.ALL,
+                             )
+
+assert(success)
+
+# baz3 is the last matching trace
+# traces = ['baz3']
+
 ```
 
-### Example 7: Testing script via command line
+### Use backlog example: when using raw traces, control which trace we look through
 
-Instead of calling RunProcess programmatically, you can run it standalone to
-test parameters, etc
+it can be very nice to not have to worry about traces that are sent when we are not monitoring the system. if you are waiting for a series of traces in a while loop, for instance, this is great. if you are just starting out a test, for example, you may not want traces hanging around from a previous test. in that instance you would want to clear the backlog first.
 
-```Bash
-> python ./run_process -c "echo foo && echo bar && echo baz" -r foo,baz
+to demonstrate this we will create items in the trace backlog in the first call to wait for trace then do something interesting in the second call.
+
+
+```Python
+
+expected_strings = [r"foo\d", r"bar\d", r"baz\d"]
+
+# lets create a command that will generate 3 lines from the CLI with the echo command
+cmd = "echo foo1\nbar2\nbaz3"
+
+# Now lets use the 3 possible values.
+
+########################
+# generate some logs in the queue
+########################
+# generate 3 traces but return immediately on the first match
+success, traces, _ = device.wait_for_trace( cmd = cmd,
+                             required_responses = r"foo",
+                             return_on_first_match = True,
+                             )
+
+# traces = ['foo1']
+# still in the backlog are traces 'bar2' and 'baz3'
+
+# if we use the backlog to find bar2
+
+########################
+# if we use the backlog of traces then we will still operate on those other queued traces
+########################
+success, traces, _ = device.wait_for_trace( cmd = cmd,
+                             required_responses = r"bar\d",
+                             trace_collection_pattern = DeviceTraceCollectPattern.ALL,
+                             )
+
+assert(success)
+
+# traces = ['bar2'] #<-- this is the bar2 from the first command, not the 2nd
+# still in the backlog are ['baz3','foo1','bar2','baz3']
+
+
+########################
+# lets clear the backlog
+########################
+success, traces, _ = device.wait_for_trace( cmd = cmd,
+                             required_responses = baz3,
+                             use_backlog = False,
+                             )
+
+assert(success)
+
+# use_backlog was set to False, the trace backlog was purged before the cmd was
+# issued
+
+# traces = ['baz3'] #<-- this is the newly generated baz3 response. since trace backlog is empty.
+
 ```
 
-For run with -h for help text
+### Trace Events
 
-```Bash
-> python ./run_process -h
-```
+Note: all of the above parameters are the exact same for the wait\_for\_event function. So every parameter example from above can be directly applied to the wait\_for\_event function. the only thing that is different is that when the trace\_response\_format is set to TraceResponseFormat.PROCESSED\_RESPONSES, you'll also get meta data about the corresponding event.
 
 # SUPPORT
 
