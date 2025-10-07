@@ -80,14 +80,15 @@ device.wait_for_trace(cmd = "echo hello world",
                       required_traces = "hello world")
 ```
 
-in all '...wait\_for\_trace()' functions you get a lot of configurability. This configurability on waiting for responses in the way you need really makes the library.
+in wait\_for\_trace() and wait\_for\_event() you get a lot of configurability. This configurability on waiting for responses in the way you need really makes the library useful and reusable in a lot of scenarios.
 
-* <strong>resp_req</strong> (optional. default None) - required responses. string or list of strings. all of the provided strings must be seen in stdout in order to be considered successful. run until all required responses are found.
-* <strong>resp_avoid</strong> (optional. deafult=None) - avoided responses. string or list of strings. if any of these responses are seen, fail and return immediately.
+* <strong>require_responses/required_events</strong> required responses. string or list of strings. all of the provided strings must be seen in stdout in order to be considered successful. run until all required responses are found.
+* <strong>cmd</strong> (optional. deafult=None) - command to run before you look at the output of the device. this is just for convenience
+* <strong>avoided_responses/avoided_events</strong> (optional. deafult=None) - avoided responses. string or list of strings. if any of these responses are seen, fail and return immediately.
 * <strong>timeout_ms</strong> (optional. deafult=10000)-  max process runtime. 0 == no timeout. if the process does not complete by the given time, fail and return.
-* <strong>run_to_completion</strong> (optional. default=False) - run till process completion? Useful if you do not care about the output but you do want the process to run. e.g. "kill 12345"
 * <strong>accumulate_traces</strong> (optional. default=False) - should we return everything printed to stdout? by default we only return the last stdout trace we received.
-* <strong>cmd_recovery_time_ms</strong> (optional. default=0) - after we complete the desired cmd processing, how long should we wait before tearing down processes and subprocesses. this can be helpful with some larger complexity software services or using hardware programmers that may require some recovery before disconnect for stability purposes.
+* <strong>trace_collect_pattern</strong> (optional. default DeviceTraceCollectPattern.MATCHING) - what traces / events should we return to the caller?
+* <strong>trace_response_format</strong> (optional. default traces: TraceResponseFormat.RAW\_TRACES. default events: TraceResponseFormat.PROCESSED\_RESPONSES.
 * <strong>return_on_first_match</strong> (optional. default=False) - return on any found resp\_req instead of waiting for all of resp\_req.
 * <strong>use_backlog</strong> (optional. default=True) - Traces are always accumulating. should we use the traces we've already accumulated when looking for traces? false will cause the trace queue to be cleared first
 
@@ -340,9 +341,121 @@ assert(success)
 
 Note: all of the above parameters are the exact same for the wait\_for\_event function. So every parameter example from above can be directly applied to the wait\_for\_event function. the only thing that is different is that when the trace\_response\_format is set to TraceResponseFormat.PROCESSED\_RESPONSES, you'll also get meta data about the corresponding event.
 
+# USAGE PATTERNS
+
+## 1. Manufacturing
+In manufacturing you often want to send a command and get a fixed response. strings are only used once. in this use case you'll end up with a lot of single calls to wait\_for\_trace. the added complexity of event map to be able to use wait\_for\_event is typically not worth the added complexity.
+
+## 2. Wait for a group of events
+When you want to see a few events together as a group. The default parameters are mostly what you want here.
+
+```Python
+events = [Events.BUTTON_PRESS, Events.BUTTON_RELEASE]
+
+success, events, _ = wait_for_event( required_events = events,
+                                     trace_collection_pattern = DeviceTraceCollectPattern.MATCHING )
+
+# events should be a list of 2 dictionaries.
+# traces : [ {
+#               _trace: "Button 0 pressed",
+#               _regex_search_string : r"Button (?P<button_num>\d+) pressed",
+#               _event: Events.BUTTON_PRESS,
+#               button_num: "0",
+#            },
+#            {
+#               _trace: "Button 0 released",
+#               _regex_search_string : r"Button (?P<button_num>\d+) released",
+#               _event: Events.BUTTON_RELEASE,
+#               button_num: "0",
+#            },
+#          ]
+#
+
+```
+
+## 3. Async process monitoring - Free running
+When you have a process that runs for a long time or generates events in an unpredictable order this pattern works great.
+
+assume we have a set of events for FW Update (not shown), we want to monitor update progress until it passes or fails.
+
+```Python
+expected_events = [Events.DFU_START, Events.DFU_PROGRESS, Events.DFU_FAIL, Events.DFU_COMPLETE]
+
+bool dfu_started = False
+
+while (True):
+    success, events, _ = wait_for_event( required_events = expected_events,
+                                         trace_collection_pattern = DeviceTraceCollectPattern.MATCHING,
+                                         return_on_first_match = True,
+                                         timeout_ms = 60 * 1000)
+
+    # we return on first match so theres only ever one event
+    event = events[0]
+
+    if (event == Events.DFU_START):
+        if (dfu_started):
+            print("DFU restarted!!!")
+
+        dfu_started = True
+
+    elif (event == Events.DFU_PROGRESS):
+        # assume there's a named regex group called 'progress_pct'
+        print(f"DFU Progress: {event.progress_pct}")
+
+    elif (event == Events.DFU_FAIL):
+        print(f"Failed to dfu")
+        # TODO: take some appropriate action
+
+    elif (event == Events.DFU_SUCCESS):
+        print(f"DFU Complete")
+        break
+```
+
+## 4. Async process monitoring - one shot
+This is similar to the previous example, except we only care about the first time we see an event. This doesn't make sense in the context of FW Update, but we'll stick with that example to just see it in action
+
+still assume we have a set of events for FW Update (not shown)
+
+```Python
+expected_events = [Events.DFU_START, Events.DFU_FAIL, Events.DFU_COMPLETE]
+start_events = 0
+end_events = 0
+
+while ( len(expected_events) > 0):
+
+    # the trick here is that expected_events is being replaced with the 'remaining_events' return value. since we're
+    # also return on first match then you get a simple one shot loop for each event
+    success, events, expected_events = wait_for_event( required_events = expected_events,
+                                                       trace_collection_pattern = DeviceTraceCollectPattern.MATCHING,
+                                                       return_on_first_match = True,
+                                                       timeout_ms = 60 * 1000)
+
+    # we return on first match so theres only ever one event
+    event = events[0]
+
+    if (event == Events.DFU_START):
+        print("DFU restarted!!!")
+        start_events += 1
+
+    elif (event == Events.DFU_FAIL):
+        print(f"Failed to dfu")
+        end_events += 1
+        break
+
+    elif (event == Events.DFU_SUCCESS):
+        print(f"DFU Complete")
+        end_events += 1
+        break
+
+assert(start_events == 1)
+assert(end_events == 1)
+
+```
+
 # SUPPORT
 
-For bugs: Report reproduction steps and OS to bugs@rmlconsulting.dev - if you
+For bugs: Report reproduction steps and OS to info@rmlconsulting.dev - if you
 know how to fix it, please just push a PR
 
-For questions and customization requests: questions@rmlconsulting.dev
+For questions and customization requests: info@rmlconsulting.dev
+
