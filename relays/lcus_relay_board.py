@@ -44,14 +44,14 @@ __now_ms = lambda: round(time.time() * 1000)
 
 class LCUSRelayBoard():
 
-    def __init__(self, path:str, num_relays:int, relay_groups:dict = {}):
+    def __init__(self, path:str, num_relays:int, relay_groups:dict = {}, seq_delay_ms = 0):
 
         self.path = os.path.expanduser( os.path.abspath(path) )
 
         if not os.path.exists( self.path ):
             raise Exception("Could not open Relay path: " + str(path) )
 
-        super().__init__(num_relays = num_relays, relay_groups = relay_groups)
+        super().__init__(num_relays = num_relays, relay_groups = relay_groups, seq_delay_ms = seq_delay_ms)
 
         self.serial     = serial.Serial( self.path, \
                                          baudrate=9600, \

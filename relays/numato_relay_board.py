@@ -53,7 +53,7 @@ class NumatoDevice(RelayBase):
     """
     a utility class to simplify common functionality of numato products
     """
-    def __init__(self, path, num_relays=0, num_gpio=0, num_adc=0, relay_groups=None):
+    def __init__(self, path, num_relays=0, num_gpio=0, num_adc=0, relay_groups=None, seq_delay_ms = 0):
         """
         if num_relays, num_gpio, or num_adc are given those values will be used. otherwise
         they will be autodiscovered
@@ -77,7 +77,10 @@ class NumatoDevice(RelayBase):
 
         autosense = (num_relays == 0) or (num_gpio == 0) or (num_adc == 0)
 
-        super().__init__(num_relays, supports_autosense = autosense, relay_groups = relay_groups)
+        super().__init__(num_relays,
+                         supports_autosense = autosense,
+                         relay_groups = relay_groups,
+                         seq_delay_ms = seq_delay_ms)
 
         # clear any remnants or partial info in usb or on target
         self._flush_buffers()

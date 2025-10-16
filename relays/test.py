@@ -11,19 +11,6 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-import time
-import sys
-
-from relay_base import RelayBase, RelayGroupType
-from numato_relay_board import NumatoDevice
-
-import logging
-
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 
 from typing import Iterable
 
@@ -83,6 +70,7 @@ if USE_NUMATO:
             num_gpio=4,
             num_adc=4,
             relay_groups=relay_groups,
+            seq_delay_ms = 100
         )
 else:
     def make_board(relay_groups: dict):
@@ -410,11 +398,144 @@ def run():
         return ok
     tests.append(("check_matching group of 4: full toggles only", t10))
 
+    # ---------- NEW: SYNCED group tests ----------
 
+    # SYNCED group of 3: write_all allows mixed state if the whole group is updated
+    def t11():
+        rg = {
+            "groups": {"S": {"type": RelayGroupType.SYNCED}},
+            "relays": {0: {"group_name": "S"}, 1: {"group_name": "S"}, 2: {"group_name": "S"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        ok &= check(b, [], "initial state")
+
+        announce("writing full SYNCED group S with mixed state via write_all {0,2} (expect 0,2 on; 1 off)")
+        b.write_all_relays([0, 2])
+        ok &= check(b, [0, 2], "after write_all {0,2}")
+
+        announce("writing full SYNCED group S via write_all {0} (still a full-group update; expect only 0 on)")
+        b.write_all_relays([0])
+        ok &= check(b, [0], "after write_all {0}")
+
+
+        announce("writing full SYNCED group S with new mix via write_all {1} (expect only 1 on)")
+        b.write_all_relays([1])
+        ok &= check(b, [1], "after write_all {1}")
+        return ok
+    tests.append(("synced group of 3: write_all accepts full-group mixed updates; rejects partial", t11))
+
+    # SYNCED group of 2: single-member activate/deactivate rejected; full-list accepted
+    def t12():
+        rg = {
+            "groups": {"S": {"type": RelayGroupType.SYNCED}},
+            "relays": {1: {"group_name": "S"}, 3: {"group_name": "S"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        ok &= check(b, [], "initial state")
+
+        announce("attempting single-member activate relay 1 in SYNCED S -> expect ValueError")
+        try:
+            b.activate_relay(relay_index=1)
+            return False
+        except ValueError:
+            ok &= check(b, [], "after rejected single-member activate on S")
+
+        announce("activating full SYNCED group S via activate_relay([1,3]) -> expect {1,3} on")
+        b.activate_relay(relay_list=[1, 3])
+        ok &= check(b, [1, 3], "after full activate S")
+
+        announce("deactivating full SYNCED group S via deactivate_relay([1,3]) -> expect all off")
+        b.deactivate_relay(relay_list=[1, 3])
+        ok &= check(b, [], "after full deactivate S")
+        return ok
+    tests.append(("synced group of 2: single-member ops rejected; full-list ops accepted", t12))
+
+    # SYNCED: single-member toggle is forbidden
+    def t13():
+        rg = {
+            "groups": {"S": {"type": RelayGroupType.SYNCED}},
+            "relays": {0: {"group_name": "S"}, 1: {"group_name": "S"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        ok &= check(b, [], "initial state")
+
+        announce("attempting single-member toggle on SYNCED group S (relay 0) -> expect ValueError")
+        try:
+            b.toggle_relay(relay_index=0)
+            return False
+        except ValueError:
+            ok &= check(b, [], "after rejected single toggle on S")
+            return ok
+    tests.append(("synced: single-member toggle rejected", t13))
+
+
+    # SYNCED + ungrouped: full-group update with extra ungrouped allowed
+    def t14():
+        rg = {
+            "groups": {"S": {"type": RelayGroupType.SYNCED}},
+            "relays": {0: {"group_name": "S"}, 1: {"group_name": "S"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        ok &= check(b, [], "initial state")
+
+        announce("write_all {0,2} (S is updated in this call, mixed allowed) -> expect {0,2} on")
+        b.write_all_relays([0, 2])
+        ok &= check(b, [0, 2], "after write_all {0,2}")
+
+        announce("write_all {1} (flip S mix, ungrouped 2 goes off) -> expect {1} on")
+        b.write_all_relays([1])
+        ok &= check(b, [1], "after write_all {1}")
+        return ok
+
+
+    tests.append(("synced + ungrouped: full-group updates allowed; partial rejected", t14))
+
+
+    # SYNCED with EXCLUSIVE present: write_all must satisfy both policies
+    def t15():
+        rg = {
+            "groups": {
+                "S": {"type": RelayGroupType.SYNCED},
+                "A": {"type": RelayGroupType.EXCLUSIVE},
+            },
+            "relays": {
+                0: {"group_name": "S"},
+                1: {"group_name": "S"},
+                2: {"group_name": "A"},
+                3: {"group_name": "A"},
+            },
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        ok &= check(b, [], "initial state")
+
+        announce("write_all {0,2} -> S updated in one call (mixed allowed), A selects 2 -> expect {0,2} on")
+        b.write_all_relays([0, 2])
+        ok &= check(b, [0, 2], "after write_all {0,2}")
+
+        announce("write_all {1,3} -> S updated (mixed allowed), A switches selection to 3 -> expect {1,3} on")
+        b.write_all_relays([1, 3])
+        ok &= check(b, [1, 3], "after write_all {1,3}")
+        return ok
+
+    tests.append(("synced + exclusive: combined policy enforcement", t15))
 
     passed = 0
     failed = 0
-
     failed_tests = []
 
     for name, fn in tests:
