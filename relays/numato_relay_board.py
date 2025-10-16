@@ -53,7 +53,7 @@ class NumatoDevice(RelayBase):
     """
     a utility class to simplify common functionality of numato products
     """
-    def __init__(self, path, num_relays=0, num_gpio=0, num_adc=0):
+    def __init__(self, path, num_relays=0, num_gpio=0, num_adc=0, relay_groups=None):
         """
         if num_relays, num_gpio, or num_adc are given those values will be used. otherwise
         they will be autodiscovered

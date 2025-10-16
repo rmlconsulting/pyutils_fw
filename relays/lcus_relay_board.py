@@ -44,12 +44,14 @@ __now_ms = lambda: round(time.time() * 1000)
 
 class LCUSRelayBoard():
 
-    def __init__(self, path, num_relays):
+    def __init__(self, path:str, num_relays:int, relay_groups:dict = {}):
 
         self.path = os.path.expanduser( os.path.abspath(path) )
 
         if not os.path.exists( self.path ):
             raise Exception("Could not open Relay path: " + str(path) )
+
+        super().__init__(num_relays = num_relays, relay_groups = relay_groups)
 
         self.mutex      = threading.RLock()
         self.serial     = serial.Serial( self.path, \
@@ -60,7 +62,6 @@ class LCUSRelayBoard():
                                          timeout=1 )
         self.num_relays = num_relays
 
-        self.relay_status = []
         logger.debug(f"initialized: {self}")
 
     def __str__(self):
@@ -102,6 +103,8 @@ class LCUSRelayBoard():
         cmd_bytes = struct.pack("<BBBB", CMD_PREAMBLE, channel, active_byte, cmd_sum)
 
         self.__execute_cmd(cmd_bytes)
+
+        self.relay_status = [ channel ] = is_active
 
     def status_inquiry(self):
 
