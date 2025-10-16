@@ -75,9 +75,9 @@ class NumatoDevice(RelayBase):
         self.num_adc = 0
         self.num_relays = 0
 
-        autosense = (num_relays != 0) or (num_gpio != 0) or (num_adc != 0)
+        autosense = (num_relays == 0) or (num_gpio == 0) or (num_adc == 0)
 
-        super().__init__(num_relays, supports_autosense = autosense)
+        super().__init__(num_relays, supports_autosense = autosense, relay_groups = relay_groups)
 
         # clear any remnants or partial info in usb or on target
         self._flush_buffers()
@@ -358,35 +358,18 @@ class NumatoDevice(RelayBase):
 
         return value
 
-    def activate_relay(self, relay_number):
-        """
-        Convenience function
-        """
-        with self._lock:
-            self.set(NumatoNode.relay, relay_number)
-            self._relay_status[ relay_number ] = 1
+    def _activate_relay(self, relay_index):
+        # a relay mutex is held before calling this function
+        self.set(NumatoNode.relay, relay_index )
+        self._relay_status[ relay_index] = 1
 
-    def deactivate_relay(self, relay_number):
-        """
-        Convenience function
-        """
-        with self._lock:
-            self.clear(NumatoNode.relay, relay_number)
-            self._relay_status[ relay_number ] = 0
+    def _deactivate_relay(self, relay_index):
+        # a relay mutex is held before calling this function
+        self.clear(NumatoNode.relay, relay_index)
+        self._relay_status[ relay_index ] = 0
 
-    def toggle_relay(self, relay_number):
-        """
-        Convenience function
-        """
-        if self.is_set(NumatoNode.relay, relay_number):
-            self.activate_relay( relay_number )
-        else:
-            self.deactivate_relay( relay_number )
-
+    """
     def write_all_relays(self, activated_relays):
-        """
-        Convenience function
-        """
         self.writeall( channel_node = NumatoNode.relay,
                        on_channels = activated_relays )
 
@@ -397,6 +380,7 @@ class NumatoDevice(RelayBase):
             else:
                 self._relay_status[i] = 0
 
+    """
     def read_all_relays(self):
         """
         Convenience function

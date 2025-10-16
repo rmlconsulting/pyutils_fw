@@ -113,7 +113,7 @@ class LCUSRelayBoard():
 
         return self.__execute_cmd(0xFF)
 
-    def relay_activate(self, relay_number):
+    def _activate_relay(self, relay_number):
 
         if (relay_number >= self.num_relays):
             raise Exception("LCUS relay board only has " + str(self.num_relays) + " relays")
@@ -128,7 +128,7 @@ class LCUSRelayBoard():
         self.__activate_relay(relay_number, True)
         self.__activate_relay(relay_number, True)
 
-    def relay_deactivate(self, relay_number):
+    def _deactiate_relay(self, relay_number):
         if (relay_number >= self.num_relays):
             raise Exception("LCUS relay board only has " + str(self.num_relays) + " relays")
 

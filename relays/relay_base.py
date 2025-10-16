@@ -18,6 +18,29 @@ class RelayGroupType(IntEnum):
     # all group members must be active. reject requests to toggle a single relay
     CHECK_MATCHING = auto()
 
+class SeqGuard:
+    """
+    Persistent sequencing guard.
+    - Holds a single shared BoundedSemaphore(1)
+    - __enter__: acquire immediately
+    - __exit__: release via Timer after delay_ms (or immediately if 0)
+    """
+    def __init__(self, delay_ms: int = 0):
+        self._gate = threading.BoundedSemaphore(1)
+        self._delay_ms = int(delay_ms) if delay_ms else 0
+
+    def __enter__(self):
+        self._gate.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._delay_ms > 0:
+            t = threading.Timer(self._delay_ms / 1000.0, self._gate.release)
+            t.daemon = True
+            t.start()
+        else:
+            self._gate.release()
+
 
 class RelayBase(ABC):
     """
@@ -31,13 +54,15 @@ class RelayBase(ABC):
     #   "groups": { group_name: { "type": <RelayGroupType> } },
     #   "relays": { <relay_index>: { "group_name": <group_name> }, ... }
     # }
-    def __init__(self, num_relays, supports_autosense: bool = False, relay_groups: dict = {}):
+    def __init__(self, num_relays, supports_autosense: bool = False, relay_groups: dict = {}, seq_delay_ms: int = 10):
         """
         Initialize the relay board abstraction.
 
         num_relays: total number of relays supported by the hardware
         supports_autosense: if True, call autosense_hardware() on init
         relay_groups: dictionary defining group names and member relationships
+        seq_delay: sequential write delay - how long should we delay subsequent
+                   writes? the library will block only if you requested a second
         """
         self._relay_groups = relay_groups
         self._relay_to_group = {}
@@ -50,11 +75,11 @@ class RelayBase(ABC):
                 self._group_members.setdefault(group_name, set()).add(relay_index)
 
         self.num_relays = num_relays
-        self._lock = threading.RLock()
+        self._lock = SeqGuard(seq_delay_ms)
         self._relay_status = {}
 
-        if supports_autosense:
-            self.autosense_hardware()
+        #if supports_autosense:
+        #    self.autosense_hardware()
 
         self._flush_buffers()
         self.write_all_relays([])
@@ -232,53 +257,49 @@ class RelayBase(ABC):
             self._apply_plan(desired_on)
             return
 
-    def toggle_relay(self, relay_index: int = None, relay_list: list[int] = None) -> None:
+    def toggle_relay(self, relay_index: int) -> None:
         """
-        Toggle one or more relays while respecting group rules.
+        Toggle a single relay according to its group rules.
+
+        relay_list has ambiguous intent with respect to groups so it has been omitted.
+
+        Group behavior:
+          - EXCLUSIVE: if relay_index is ON -> turn it OFF;
+                       if OFF -> activate it and turn others in the group OFF.
+          - FORCE_MATCHING: flips the entire group state (using any member as toggle).
+          - CHECK_MATCHING: forbids single-member toggle; must use full-group
+                            activate/deactivate or write_all_relays() instead.
+          - Ungrouped: simply toggles the given relay.
         """
-        targets = self._validate_parameters(relay_index, relay_list)
-        group_name, group_type, members = self._validate_group_consistency(targets)
+        if not (0 <= relay_index < self.num_relays):
+            raise IndexError(f"relay_index {relay_index} out of range (0..{self.num_relays - 1})")
+
+        group_name = self._group_of(relay_index)
         current_on = self._current_on()
         desired_on = set(current_on)
 
+        # ungrouped: simple flip
         if group_name is None:
-            for t in targets:
-                if t in current_on:
-                    desired_on.discard(t)
-                else:
-                    desired_on.add(t)
+            if relay_index in current_on:
+                desired_on.discard(relay_index)
+            else:
+                desired_on.add(relay_index)
             self._apply_plan(desired_on)
             return
 
+        group_type = self._group_type(group_name)
+        members = self._members(group_name)
+
         if group_type == RelayGroupType.EXCLUSIVE:
-            if len(targets) != 1:
-                raise ValueError(f"exclusive group '{group_name}' allows toggling exactly one member")
-            t = targets[0]
-            if t in current_on:
-                desired_on.discard(t)
+            if relay_index in current_on:
+                desired_on.discard(relay_index)
             else:
                 desired_on -= members
-                desired_on.add(t)
+                desired_on.add(relay_index)
             self._apply_plan(desired_on)
             return
 
         if group_type == RelayGroupType.FORCE_MATCHING:
-            intents = set()
-            for t in targets:
-                intents.add("off" if t in current_on else "on")
-            if len(intents) != 1:
-                raise ValueError(f"force_matching group '{group_name}' toggle requires consistent command across targets")
-            intent = next(iter(intents))
-            if intent == "on":
-                desired_on |= members
-            else:
-                desired_on -= members
-            self._apply_plan(desired_on)
-            return
-
-        if group_type == RelayGroupType.CHECK_MATCHING:
-            if set(targets) != members:
-                raise ValueError(f"check_matching group '{group_name}' requires all members: {sorted(members)}")
             any_on = any(m in current_on for m in members)
             if any_on:
                 desired_on -= members
@@ -286,6 +307,13 @@ class RelayBase(ABC):
                 desired_on |= members
             self._apply_plan(desired_on)
             return
+
+        if group_type == RelayGroupType.CHECK_MATCHING:
+            raise ValueError(
+                f"check_matching group '{group_name}' forbids single-member toggle; "
+                f"use activate_relay(relay_list={sorted(members)}), "
+                f"deactivate_relay(relay_list={sorted(members)}), or write_all_relays()."
+            )
 
     def _flush_buffers(self) -> None:
         """
@@ -306,10 +334,11 @@ class RelayBase(ABC):
         without group logic. Subclasses may override for hardware efficiency.
         """
         for channel in range(self.num_relays):
-            if channel in on_channels:
-                self._activate_relay(channel)
-            else:
-                self._deactivate_relay(channel)
+            with self._lock:
+                if channel in on_channels:
+                    self._activate_relay(channel)
+                else:
+                    self._deactivate_relay(channel)
 
     def write_all_relays(self, on_channels: list[int]) -> None:
         """
