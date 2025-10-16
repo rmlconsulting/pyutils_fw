@@ -96,28 +96,24 @@ class NumatoDevice(RelayBase):
             self.num_relays = num_relays
 
     def _flush_buffers(self):
-        with self._lock:
-            self.serial.flushInput()
-            self.serial.flushOutput()
+        self.serial.flushInput()
+        self.serial.flushOutput()
 
         #send an empty command to clear the buffers on the target
         self._execute_serial_cmd('')
 
     def _execute_serial_cmd(self, cmd):
 
-        response = ''
+        logger.debug("sending: " + cmd)
+        self.serial.write( str.encode(cmd + "\r") )
 
-        with self._lock:
-            logger.debug("sending: " + cmd)
-            self.serial.write( str.encode(cmd + "\r") )
+        # read the echo'd cmd we just sent
+        response = self.serial.read_until(expected=b'\r')
 
-            # read the echo'd cmd we just sent
-            response = self.serial.read_until(expected=b'\r')
+        # read the response and strip off the cruft
+        response = self.serial.read_until(expected=b'>').lstrip().rstrip(b'\r\n>').decode("ascii")
 
-            # read the response and strip off the cruft
-            response = self.serial.read_until(expected=b'>').lstrip().rstrip(b'\r\n>').decode("ascii")
-
-            logger.debug("response = [" + response + "]")
+        logger.debug("response = [" + response + "]")
 
         if (response == ''):
             response = None

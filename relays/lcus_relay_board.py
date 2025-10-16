@@ -53,14 +53,12 @@ class LCUSRelayBoard():
 
         super().__init__(num_relays = num_relays, relay_groups = relay_groups)
 
-        self.mutex      = threading.RLock()
         self.serial     = serial.Serial( self.path, \
                                          baudrate=9600, \
                                          bytesize=8, \
                                          parity='N', \
                                          stopbits=1, \
                                          timeout=1 )
-        self.num_relays = num_relays
 
         logger.debug(f"initialized: {self}")
 
@@ -73,16 +71,15 @@ class LCUSRelayBoard():
 
         response = ''
 
-        with self.mutex:
-            logger.debug("sending: " + str(cmd))
-            self.serial.write( cmd )
+        logger.debug("sending: " + str(cmd))
+        self.serial.write( cmd )
 
-            if self.serial.in_waiting > 0:
-                # if you have a relay board with 4 or more channels, you can
-                # execute a status cmd
-                response = self.serial.read( self.serial.in_waiting )
+        if self.serial.in_waiting > 0:
+            # if you have a relay board with 4 or more channels, you can
+            # execute a status cmd
+            response = self.serial.read( self.serial.in_waiting )
 
-                logger.debug("response = [" + str(response) + "]")
+            logger.debug("response = [" + str(response) + "]")
 
         return response
 
