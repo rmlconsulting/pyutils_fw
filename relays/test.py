@@ -3,6 +3,7 @@ import sys
 
 from relay_base import RelayBase, RelayGroupType
 from numato_relay_board import NumatoDevice
+from named_relay_utils import NamedRelay, NamedRelayGroup
 
 import logging
 
@@ -26,8 +27,12 @@ class TestRelayBoard(RelayBase):
     adds detailed logging for write_all, activate, and deactivate.
     """
 
-    def __init__(self, num_relays=4, relay_groups: dict = {}):
-        super().__init__(num_relays=num_relays, supports_autosense=False, relay_groups=relay_groups)
+    def __init__(self, num_relays=4, relay_groups: dict = {}, seq_delay_ms: int = 0):
+
+        super().__init__(num_relays=num_relays,
+                         supports_autosense=False,
+                         relay_groups=relay_groups,
+                         seq_delay_ms = seq_delay_ms)
 
     def _activate_relay(self, relay_index: int) -> None:
         prev = int(self._relay_status.get(relay_index, 0))
@@ -59,23 +64,23 @@ class TestRelayBoard(RelayBase):
 # ---------------- optional: run against your NumatoDevice ----------------
 
 USE_NUMATO = True
-NUMATO_PATH = "/dev/tty.usbmodem1101"
+NUMATO_PATH = "/dev/tty.usbmodem21101"
 
 if USE_NUMATO:
-
-    def make_board(relay_groups: dict):
+    def make_board(relay_groups: dict, seq_delay_ms: int = 50):
         return NumatoDevice(
             path=NUMATO_PATH,
             num_relays=4,
             num_gpio=4,
             num_adc=4,
             relay_groups=relay_groups,
-            seq_delay_ms = 100
+            seq_delay_ms = seq_delay_ms
         )
 else:
-    def make_board(relay_groups: dict):
-        return TestRelayBoard(num_relays=4, relay_groups=relay_groups)
-
+    def make_board(relay_groups: dict, seq_delay_ms: int = 0):
+        return TestRelayBoard( num_relays = 4,
+                               relay_groups=relay_groups,
+                               seq_delay_ms=seq_delay_ms)
 
 # ---------------- helpers ----------------
 
@@ -534,6 +539,165 @@ def run():
 
     tests.append(("synced + exclusive: combined policy enforcement", t15))
 
+    # t16: Named relays + EXCLUSIVE group {R0, R2} using NamedRelayGroup helpers
+    def t16():
+        # build relay_groups config (EXCLUSIVE group A with members 0 and 2)
+        rg = {
+            "groups": {"A": {"type": RelayGroupType.EXCLUSIVE}},
+            "relays": {0: {"group_name": "A"}, 2: {"group_name": "A"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        # name mapping
+        name_to_index = {"R0": 0, "R1": 1, "R2": 2, "R3": 3}
+
+        # named single relays
+        R0 = NamedRelay(board_name="board", board=b, index=0, name="R0")
+        R2 = NamedRelay(board_name="board", board=b, index=2, name="R2")
+
+        # named group
+        G = NamedRelayGroup(
+            board_name="board",
+            board=b,
+            name="A",
+            members=[0, 2],
+            gtype=RelayGroupType.EXCLUSIVE,
+            name_to_index=name_to_index,
+        )
+
+        ok &= check(b, [], "initial state")
+
+        announce("activate_exclusive('R0') on EXCLUSIVE A (expect only 0 on)")
+        G.activate_exclusive("R0")
+        ok &= check(b, [0], "after G.activate_exclusive('R0')")
+
+        announce("activate_exclusive('R2') on EXCLUSIVE A (expect only 2 on)")
+        G.activate_exclusive("R2")
+        ok &= check(b, [2], "after G.activate_exclusive('R2')")
+
+        announce("NamedRelay.activate() on R0 (expects selection switch to 0)")
+        R0.activate()
+        ok &= check(b, [0], "after R0.activate()")
+
+        announce("NamedRelay.deactivate() on R2 (no change since R2 is off)")
+        R2.deactivate()
+        ok &= check(b, [0], "after R2.deactivate()")
+
+        return ok
+    tests.append(("Named relays + EXCLUSIVE group {R0, R2} using NamedRelayGroup helpers", t16))
+
+    # t17: Named relays + FORCE_MATCHING group {R1, R3} with ungrouped R2
+    def t17():
+        rg = {
+            "groups": {"B": {"type": RelayGroupType.FORCE_MATCHING}},
+            "relays": {1: {"group_name": "B"}, 3: {"group_name": "B"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        name_to_index = {"R0": 0, "R1": 1, "R2": 2, "R3": 3}
+        R1 = NamedRelay(board_name="board", board=b, index=1, name="R1")
+        R2 = NamedRelay(board_name="board", board=b, index=2, name="R2")
+
+        G = NamedRelayGroup(
+            board_name="board",
+            board=b,
+            name="B",
+            members=[1, 3],
+            gtype=RelayGroupType.FORCE_MATCHING,
+            name_to_index=name_to_index,
+        )
+
+        ok &= check(b, [], "initial state")
+
+        announce("R1.activate() in FORCE_MATCHING B (expect {1,3} on)")
+        R1.activate()
+        ok &= check(b, [1, 3], "after R1.activate()")
+
+        announce("G.deactivate_all() to turn B off, then R2.activate() (expect {2} on)")
+        G.deactivate_all()
+        R2.activate()
+        ok &= check(b, [2], "after G.deactivate_all() + R2.activate()")
+
+        announce("G.activate_all() (expect {1,3,2} on -> group on + R2 preserved)")
+        G.activate_all()
+        ok &= check(b, [1, 2, 3], "after G.activate_all()")
+
+        return ok
+
+    tests.append(("Named relays + FORCE_MATCHING group {R1, R3} with ungrouped R2", t17))
+
+    # t18: SeqGuard delay — ensure min spacing between ops is enforced
+    def t18():
+        SEQ_MS = 100  # measurable on real hardware
+        rg = {"groups": {}, "relays": {}}
+
+        b = make_board(rg, seq_delay_ms=SEQ_MS)
+        print_config(rg)
+        ok = True
+        ok &= check(b, [], "initial state")
+
+        announce(f"timing test: activate(0) then immediately deactivate(0); "
+                 f"expect the second call to take ≥ {SEQ_MS} ms due to seq guard")
+
+        # first transaction: turn relay 0 ON (engages guard)
+        b.activate_relay(relay_index=0)
+        ok &= check(b, [0], "after activate 0")
+
+        # second transaction: should be held by the guard for ~SEQ_MS
+        import time
+        t0 = time.monotonic()
+        b.deactivate_relay(relay_index=0)
+        t1 = time.monotonic()
+        elapsed_ms = (t1 - t0) * 1000.0
+
+        logging.info("seqguard measured elapsed for 2nd op: %.1f ms (seq_delay_ms=%d)",
+                     elapsed_ms, SEQ_MS)
+
+        # allow some jitter, but it should be close to (or above) the configured delay
+        ok &= (elapsed_ms >= 0.9 * SEQ_MS)
+
+        # sanity: ended OFF
+        ok &= check(b, [], "after deactivate 0")
+
+        return ok
+    tests.append(("SeqGuard delay — ensure min spacing between ops is enforced", t18))
+
+    # test 19: named group + SYNCED with update_group()
+    def t19():
+        rg = {
+            "groups": {"S": {"type": RelayGroupType.SYNCED}},
+            "relays": {0: {"group_name": "S"}, 1: {"group_name": "S"}, 2: {"group_name": "S"}},
+        }
+        b = make_board(rg)
+        print_config(rg)
+        ok = True
+
+        name_to_index = {"R0": 0, "R1": 1, "R2": 2, "R3": 3}
+        S = NamedRelayGroup(
+            board_name="board",
+            board=b,
+            name="S",
+            members=[0, 1, 2],
+            gtype=RelayGroupType.SYNCED,
+            name_to_index=name_to_index,
+        )
+
+        ok &= check(b, [], "initial state")
+
+        announce("S.update_group(['R0','R2']) -> expect 0,2 on; 1 off")
+        S.update_group(["R0", "R2"])
+        ok &= check(b, [0, 2], "after S.update_group(['R0','R2'])")
+
+        announce("S.update_group([]) -> expect all S off")
+        S.update_group([])
+        ok &= check(b, [], "after S.update_group([])")
+        return ok
+    tests.append(("named group + SYNCED with update_group()", t19))
+
     passed = 0
     failed = 0
     failed_tests = []
@@ -564,6 +728,7 @@ def run():
             failed_tests.append(f"test {tnum}: {name}")
 
         tnum += 1
+
 
     total = passed + failed
     print("=" * 31)

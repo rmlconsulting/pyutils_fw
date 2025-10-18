@@ -7,7 +7,6 @@ from enum import IntEnum, auto
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
 
-
 class RelayGroupType(IntEnum):
     # only one can be active in the group
     EXCLUSIVE = auto()
@@ -21,13 +20,31 @@ class RelayGroupType(IntEnum):
     # all group members must be updated together (mixed on/off allowed)
     SYNCED = auto()
 
-
 class SeqGuard:
     """
-    Persistent sequencing guard.
+    Persistent sequencing guard. The first time it is used, there is no delay.
+    subsequent calls to the guarded resource will be guaranteed to not be
+    called before the specified delay_ms duration. Note: the delay starts
+    from the time the block of code is exited.
+
     - Holds a single shared BoundedSemaphore(1)
     - __enter__: acquire immediately
     - __exit__: release via Timer after delay_ms (or immediately if 0)
+
+    example:
+
+    lock = SeqGuard(delay_ms = 10)
+    with lock:
+        print("first guarded code has no delay")
+        # sleep 5ms to simulate a lot of work
+        time.sleep(0.005)
+
+    with lock:
+        # this is executed 10 ms since the end of the first block exit, or
+        # ~15 ms from the entry of the first block (given the first block takes
+        # 5 ms to complete)
+        print("second guarded block")
+
     """
     def __init__(self, delay_ms: int = 0):
         self._gate = threading.BoundedSemaphore(1)
@@ -134,6 +151,7 @@ class RelayBase(ABC):
         changes = len(adds) + len(removes)
 
         if changes == 0:
+            logger.debug("Relay: no changes")
             return
 
         if changes == 1:
@@ -147,26 +165,71 @@ class RelayBase(ABC):
 
         self._write_all_relays_raw(sorted(desired_on))
 
-    def _apply_plan(self, desired_on: set[int]) -> None:
-        self._apply_delta(desired_on)
-
     @abstractmethod
     def _activate_relay(self, relay_index: int) -> None:
+        """
+        send command to activate relay with provided index
+        """
         pass
 
     @abstractmethod
     def _deactivate_relay(self, relay_index: int) -> None:
+        """
+        send command to return relay with provided index back to its normal position
+        """
         pass
 
-    def activate_relay(self, relay_index: int = None, relay_list: list[int] = None) -> None:
+    def _flush_buffers(self) -> None:
+        """
+        Optional: find a safe way to clear the relay board's incoming comms buffer (e.g. sending "\n")
+        """
+        pass
+
+    def autosense_hardware(self) -> None:
+        """
+        Optional: query board to determine num_relays
+        """
+        pass
+
+    def read_relay(self, relay_index: int) -> int:
+        """
+        Optional hardware read for a single relay.
+        Return 1 (on) or 0 (off).
+        Default: not implemented
+        """
+        raise NotImplementedError("read_relay_hw not implemented for this device")
+
+    def _schedule_auto_off(self, delay_ms: int, relays: list[int]) -> None:
+        """
+        Schedule a one-shot timer to deactivate the given relays after delay_ms.
+        """
+        relays = list(relays)
+
+        def cb():
+            with self._lock:
+                try:
+                    self.deactivate_relay(relay_list=relays)
+                except Exception:
+                    pass
+
+        t = threading.Timer(delay_ms / 1000.0, cb)
+        t.daemon = True
+        t.start()
+
+    def activate_relay(self, relay_index: int = None, relay_list: list[int] = None, auto_off_ms: int | None = None) -> None:
         targets = self._validate_parameters(relay_index, relay_list)
+
+        if all(self._relay_status.get(t, 0) == 1 for t in targets):
+            LOGGER.debug(f"activate_relay: targets {targets} already active, skipping")
+            return
+
         group_name, group_type, members = self._validate_group_consistency(targets)
         current_on = self._current_on()
         desired_on = set(current_on)
 
         if group_name is None:
             desired_on |= set(targets)
-            self._apply_plan(desired_on)
+            self._apply_delta(desired_on)
             return
 
         if group_type == RelayGroupType.EXCLUSIVE:
@@ -189,17 +252,26 @@ class RelayBase(ABC):
                 raise ValueError(f"synced group '{group_name}' requires all members be updated together")
             desired_on |= set(targets)
 
-        self._apply_plan(desired_on)
+        self._apply_delta(desired_on)
+
+        if auto_off_ms and auto_off_ms > 0:
+            self._schedule_auto_off(auto_off_ms, targets)
 
     def deactivate_relay(self, relay_index: int = None, relay_list: list[int] = None) -> None:
         targets = self._validate_parameters(relay_index, relay_list)
+
+        # If all targets are already OFF, skip entirely
+        if all(self._relay_status.get(t, 0) == 0 for t in targets):
+            LOGGER.debug(f"deactivate_relay: targets {targets} already inactive, skipping")
+            return
+
         group_name, group_type, members = self._validate_group_consistency(targets)
         current_on = self._current_on()
         desired_on = set(current_on)
 
         if group_name is None:
             desired_on -= set(targets)
-            self._apply_plan(desired_on)
+            self._apply_delta(desired_on)
             return
 
         if group_type == RelayGroupType.EXCLUSIVE:
@@ -218,7 +290,7 @@ class RelayBase(ABC):
                 raise ValueError(f"synced group '{group_name}' requires all members be updated together")
             desired_on -= set(targets)
 
-        self._apply_plan(desired_on)
+        self._apply_delta(desired_on)
 
     def toggle_relay(self, relay_index: int) -> None:
         if not (0 <= relay_index < self.num_relays):
@@ -233,7 +305,7 @@ class RelayBase(ABC):
                 desired_on.discard(relay_index)
             else:
                 desired_on.add(relay_index)
-            self._apply_plan(desired_on)
+            self._apply_delta(desired_on)
             return
 
         group_type = self._group_type(group_name)
@@ -259,13 +331,7 @@ class RelayBase(ABC):
         elif group_type == RelayGroupType.SYNCED:
             raise ValueError(f"synced group '{group_name}' must be toggled as a full group via relay_list")
 
-        self._apply_plan(desired_on)
-
-    def _flush_buffers(self) -> None:
-        pass
-
-    def autosense_hardware(self) -> None:
-        pass
+        self._apply_delta(desired_on)
 
     def _write_all_relays_raw(self, on_channels: list[int]) -> None:
         on_set = set(on_channels)
@@ -337,7 +403,13 @@ class RelayBase(ABC):
 
         self._write_all_relays_raw(sorted(fixed_on))
 
-    def read_all_relays(self) -> list[int]:
+    def read_all_relays(self, force : bool = False) -> list[int]:
+
+        if force:
+            for i in range(self.num_relays):
+                state = int(self.read_relay(i))
+                self._relay_status[i] = 1 if state else 0
+
         return [index for index, active in self._relay_status.items() if active]
 
     def is_relay_active(self, relay_index: int) -> bool:
