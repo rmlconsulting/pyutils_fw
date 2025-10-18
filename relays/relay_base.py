@@ -216,7 +216,7 @@ class RelayBase(ABC):
         t.daemon = True
         t.start()
 
-    def activate_relay(self, relay_index: int = None, relay_list: list[int] = None, auto_off_ms: int | None = None) -> None:
+    def activate_relay(self, relay_index: int = None, relay_list: list[int] = None, auto_off_ms: int | None = None, blocking = False) -> None:
         targets = self._validate_parameters(relay_index, relay_list)
 
         if all(self._relay_status.get(t, 0) == 1 for t in targets):
@@ -255,7 +255,11 @@ class RelayBase(ABC):
         self._apply_delta(desired_on)
 
         if auto_off_ms and auto_off_ms > 0:
-            self._schedule_auto_off(auto_off_ms, targets)
+            if blocking:
+                time.sleep(auto_off_ms)
+                self.deactivate_relay(relay_list=relays)
+            else:
+                self._schedule_auto_off(auto_off_ms, targets)
 
     def deactivate_relay(self, relay_index: int = None, relay_list: list[int] = None) -> None:
         targets = self._validate_parameters(relay_index, relay_list)
