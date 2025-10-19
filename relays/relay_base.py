@@ -91,9 +91,6 @@ class RelayBase(ABC):
         for i in range(num_relays):
             self._relay_status[i] = 0
 
-    def __del__(self):
-        self.write_all_relays([])
-
     def _group_of(self, relay_index: int):
         return self._relay_to_group.get(relay_index)
 
