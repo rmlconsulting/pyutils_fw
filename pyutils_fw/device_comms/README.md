@@ -4,7 +4,7 @@ The DeviceComms library allows you to open up a comms channel with hardware devi
 
 Ultimately, both ascii and binary interfaces will be supported across all transports, but at this time, only ascii interfaces are supported. stay tuned.
 
-![alt text](supported_platforms.jpeg)
+![alt text](../../docs/images/supported_platforms.jpeg)
 
 ### Design Goals
 
@@ -29,7 +29,7 @@ C. message queue interactions to safely grab unprocessed data
 
 The layering of these interfaces are arranged as in the following diagram:
 
-![alt text](interface_diagram.jpeg "Title")
+![alt text](../../docs/images/interface_diagram.jpeg "Title")
 
 In order to dive into examples lets get setup first.
 

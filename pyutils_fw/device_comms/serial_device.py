@@ -37,7 +37,7 @@ import serial.tools.list_ports
 from dataclasses import dataclass
 import logging
 
-from device_comms_base import DeviceCommsBase, StartupStatus
+from .device_comms_base import DeviceCommsBase, StartupStatus
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.

@@ -8,13 +8,8 @@ import signal
 import traceback
 from enum import Enum, auto
 
-# add parent directory to python path for this example
-this_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(this_dir, '..'))
-sys.path.insert(0, parent_dir)
-
-import jlink_device
-from device_comms_base import TraceResponseFormat, DeviceTraceCollectPattern
+from pyutils_fw.device_comms import jlink_device
+from pyutils_fw.device_comms import TraceResponseFormat, DeviceTraceCollectPattern
 
 ##########################################
 # LOGGING

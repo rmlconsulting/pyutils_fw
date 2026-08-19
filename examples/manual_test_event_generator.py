@@ -1,7 +1,10 @@
 
-from FunctionCaller import *
-
-from EventGeneratorBase import *
+from pyutils_fw.event_generator import (
+    EventCoordinator,
+    EventTiming,
+    FunctionCaller,
+    IntervalType,
+)
 import time
 
 def foo(a):

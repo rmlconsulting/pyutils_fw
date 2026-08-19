@@ -26,10 +26,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ################################################################################
 
-import pytest
 import logging
 from enum import IntEnum
-from EventGeneratorBase import *
+from .EventGeneratorBase import *
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.

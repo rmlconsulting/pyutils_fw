@@ -33,7 +33,7 @@ import serial
 import time
 import logging
 from enum import Enum, auto
-from relay_base import RelayBase
+from .relay_base import RelayBase
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.

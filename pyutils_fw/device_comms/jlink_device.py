@@ -39,7 +39,7 @@ from asyncio.subprocess import PIPE,STDOUT
 from enum import IntEnum
 import logging
 from dataclasses import dataclass
-from device_comms_base import DeviceCommsBase, StartupStatus
+from .device_comms_base import DeviceCommsBase, StartupStatus
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 

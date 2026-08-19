@@ -1,7 +1,7 @@
 # named_relays.py
 from dataclasses import dataclass
 from typing import Any, Dict, List
-from relay_base import RelayGroupType
+from .relay_base import RelayGroupType
 
 
 # ======================================================================

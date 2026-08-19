@@ -1,5 +1,5 @@
 import logging
-from tee import Tee
+from pyutils_fw.tee import Tee
 
 ##########################################
 # LOGGING

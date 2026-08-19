@@ -1,14 +1,8 @@
 
 import logging
 import time
-import os
-import sys
 
-# add parent directory to python path for this example
-parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
-sys.path.insert(0, parent_dir)
-
-import serial_device
+from pyutils_fw.device_comms import serial_device
 
 logging.basicConfig(
     level=logging.DEBUG,

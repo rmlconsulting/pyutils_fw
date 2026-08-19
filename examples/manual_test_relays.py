@@ -1,9 +1,13 @@
 import time
 import sys
 
-from relay_base import RelayBase, RelayGroupType
-from numato_relay_board import NumatoDevice
-from named_relay_utils import NamedRelay, NamedRelayGroup
+from pyutils_fw.relays import (
+    RelayBase,
+    RelayGroupType,
+    NumatoDevice,
+    NamedRelay,
+    NamedRelayGroup,
+)
 
 import logging
 
