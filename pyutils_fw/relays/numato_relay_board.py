@@ -30,6 +30,7 @@ import threading
 import os
 import re
 import serial
+import sys
 import time
 import logging
 from enum import Enum, auto
@@ -59,10 +60,18 @@ class NumatoDevice(RelayBase):
         they will be autodiscovered
         """
 
-        self.path = os.path.expanduser( os.path.abspath(path) )
+        # expand env vars / ~ first. Windows COM ports are port NAMES, not
+        # filesystem paths: abspath("COM3") would mangle them and
+        # os.path.exists() would reject them, so they skip both
+        expanded = os.path.expanduser( os.path.expandvars( str(path) ))
 
-        if not os.path.exists( self.path ):
-            raise Exception("Could not open Relay path: " + str(path) )
+        if sys.platform.startswith("win") and expanded.upper().startswith("COM"):
+            self.path = expanded.upper()
+        else:
+            self.path = os.path.abspath( expanded )
+
+            if not os.path.exists( self.path ):
+                raise Exception("Could not open Relay path: " + str(path) )
 
         self.serial = serial.Serial( self.path, \
                                      baudrate=115200, \

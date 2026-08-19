@@ -190,6 +190,21 @@ def test_autodiscovery_defaults(numato):
     assert "relay read a" in fake.commands
 
 
+def test_windows_com_port_accepted(monkeypatch):
+    # regression: __init__ ran abspath + os.path.exists on the path, which
+    # mangled and then rejected Windows COM port names before pyserial ever
+    # saw them
+    import sys as _sys
+
+    fake = FakeNumatoSerial(num_relays=4, num_gpio=4, num_adc=4)
+    monkeypatch.setattr(serial, "Serial", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(_sys, "platform", "win32")
+
+    device = NumatoDevice("com3", num_relays=4, num_gpio=4, num_adc=4)
+    assert device.path == "COM3"
+    assert device.fw_version == "1.0.0"
+
+
 # ---------------------------------------------------------------- addressing
 
 def test_channels_past_nine_use_alpha_addressing(numato):
