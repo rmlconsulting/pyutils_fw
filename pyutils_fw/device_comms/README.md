@@ -34,7 +34,9 @@ The layering of these interfaces are arranged as in the following diagram:
 In order to dive into examples lets get setup first.
 
 ### Setup
-pip install requirements.txt
+pip install pyutils-fw
+
+(or `pip install -e .` from a checkout of this repo)
 
 that's it. now just connect a device over serial, jtag (jlink swd only for now), ... (coming soon) websocket (connect it to your local network).
 
@@ -52,7 +54,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-from serial_device import *
+from pyutils_fw.device_comms import SerialCommsDevice, SerialCommsDeviceConfig
 
 config = SerialCommsDeviceConfig( serial_device_path = "/dev/tty.usbmodem123",
                                   baud_rate = 115200)
@@ -77,7 +79,7 @@ device.wait_for_trace("hello world")
 # or combine it together
 
 device.wait_for_trace(cmd = "echo hello world",
-                      required_traces = "hello world")
+                      required_responses = "hello world")
 ```
 
 in wait\_for\_trace() and wait\_for\_event() you get a lot of configurability. This configurability on waiting for responses in the way you need really makes the library useful and reusable in a lot of scenarios.
@@ -204,7 +206,7 @@ will return
 
 | foo
 
-Also assume that we have created a device object already. To improve readability we will not repeate this code. The init code will look like one of the following:
+Also assume that we have created a device object already. To improve readability we will not repeate this code. The init code will look like one of the following (both use `from pyutils_fw.device_comms import serial_device, jlink_device`):
 
 ## Serial Device:
 
