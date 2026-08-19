@@ -241,12 +241,13 @@ class RelayBase(ABC):
         current_on = self._current_on()
         desired_on = set(current_on)
 
+        # NOTE: the ungrouped case falls through to the shared tail below.
+        # it used to return early, which made auto_off_ms/blocking dead
+        # code for ungrouped relays
         if group_name is None:
             desired_on |= set(targets)
-            self._apply_delta(desired_on)
-            return
 
-        if group_type == RelayGroupType.EXCLUSIVE:
+        elif group_type == RelayGroupType.EXCLUSIVE:
             if len(targets) != 1:
                 raise ValueError(f"exclusive group '{group_name}' allows activating exactly one member")
             chosen = targets[0]
