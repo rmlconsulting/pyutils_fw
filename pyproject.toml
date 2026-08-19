@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyutils-fw"
+version = "0.1.0"
+description = "Firmware-centric Python utilities: relay board control, device comms (serial / SEGGER J-Link RTT), and process helpers"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "BSD-2-Clause" }
+authors = [
+    { name = "RML Consulting, LLC", email = "info@rmlconsulting.dev" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "pyserial>=3.4",
+    "bidict>=0.21",
+]
+
+[project.optional-dependencies]
+process = ["psutil>=5.8"]
+
+[project.urls]
+Homepage = "https://github.com/rmlconsulting/pyutils_fw"
+Issues = "https://github.com/rmlconsulting/pyutils_fw/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pyutils_fw"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
