@@ -51,6 +51,8 @@ class SerialCommsDeviceConfig:
     name: str = "SerialCommsDevice" # just for sensible logs
     device_recovery_time: int = 0 # amount of time needed before reconnecting
                                   # once disconnected
+    encoding: str = "latin-1" # text encoding on the wire. latin-1 keeps the
+                              # historical behavior (any byte decodes)
 
 class SerialCommsDevice(DeviceCommsBase):
 
@@ -124,7 +126,7 @@ class SerialCommsDevice(DeviceCommsBase):
                     # pick up any data pending on the serial bus
                     if ser.in_waiting:
                         # Read and decode the trace
-                        trace = ser.readline().decode("latin-1").strip()
+                        trace = ser.readline().decode(self.__config.encoding).strip()
 
                         if len(trace) > 0:
                             data_read = True
@@ -146,7 +148,7 @@ class SerialCommsDevice(DeviceCommsBase):
                         if cmd is not None:
                             data_written = True
                             logger.info(f"--> {cmd}")
-                            ser.write( (f"{cmd}\n").encode("latin-1") )
+                            ser.write( (f"{cmd}\n").encode(self.__config.encoding) )
 
                     self.release_hardware_mutex()
 

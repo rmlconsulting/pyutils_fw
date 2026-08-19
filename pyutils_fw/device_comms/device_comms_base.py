@@ -156,10 +156,10 @@ class DeviceCommsBase(ABC):
         Returns:
             str: device path if device exists, None otherwise
         """
-        # Expand environment variables and user home (~)
-        expanded_device = os.path.abspath( \
-                          os.path.expanduser( \
-                          os.path.expandvars( device_path )))
+        # Expand environment variables and user home (~). Deliberately NOT
+        # abspath yet: abspath("COM3") would prepend the cwd and hide the
+        # COM-port shape from the Windows check below.
+        expanded_device = os.path.expanduser( os.path.expandvars( device_path ))
 
         # Check for Windows platform and if the device looks like a COM port
         if sys.platform.startswith("win") and expanded_device.upper().startswith("COM"):
@@ -167,12 +167,22 @@ class DeviceCommsBase(ABC):
                 import serial.tools.list_ports
             except ImportError:
                 raise ImportError("pyserial is required to check COM ports on Windows. "
-                                  "Please run 'pip install requirements.txt from the device_comms directory'")
+                                  "Please run 'pip install pyserial'")
             # List available COM ports (normalize to uppercase for consistency)
             ports = [port.device.upper() for port in serial.tools.list_ports.comports()]
-            return expanded_device.upper() in ports
+
+            # return the same shape as the POSIX branch: the normalized
+            # device name on success, None otherwise (this used to return
+            # a bool, which callers then fed to serial.Serial())
+            normalized = expanded_device.upper()
+            if normalized in ports:
+                return normalized
+
+            return None
 
         else:
+
+            expanded_device = os.path.abspath(expanded_device)
 
             if os.path.exists(expanded_device):
                 return expanded_device
@@ -185,7 +195,7 @@ class DeviceCommsBase(ABC):
         # this requires that there are no duplicates of events or regexes
         try:
             self.trace_event_map = bidict.bidict( event_map )
-        except ValueDuplicationError:
+        except bidict.ValueDuplicationError:
             raise Exception("Error initializing trace event map: you cannot have two of the same trace or two of the same event in the map")
 
     def acquire_hardware_mutex(self, timeout_ms = 3000, except_on_fail = True) -> None:
@@ -302,7 +312,7 @@ class DeviceCommsBase(ABC):
             self._is_logging.clear()
             self.release_hardware_mutex()
         except Exception as e:
-            logger.error("Stop capturing traces exception: {e}")
+            logger.error(f"Stop capturing traces exception: {e}")
             raise SubprocessShutdownError(f"Could not shutdown log capturing thread. error:{e}")
 
         logger.debug("Stop capturing traces returning...")
@@ -409,7 +419,7 @@ class DeviceCommsBase(ABC):
 
         # raw traces are just one continuous string
         if trace_response_format == TraceResponseFormat.RAW_TRACES:
-            logger.debug("adding RAW trace response: {trace}")
+            logger.debug(f"adding RAW trace response: {trace}")
             trace_response += f"{trace}\n"
 
         # processed traces will be a list of dictionaries
@@ -420,7 +430,7 @@ class DeviceCommsBase(ABC):
             trace_response.append(trace_event.to_dict())
 
         else:
-            raise Exception("Unkwnown trace response format type: {trace_response_format}")
+            raise Exception(f"Unknown trace response format type: {trace_response_format}")
 
         return trace_response
 
@@ -461,19 +471,25 @@ class DeviceCommsBase(ABC):
         if not self.is_capturing_traces():
             self.start_capturing_traces()
 
-        # make sure required_responses is either None or a list
+        # make sure required_responses is either None or a list. COPY the
+        # caller's list: entries are consumed below as they match, and this
+        # function used to destroy the list the caller passed in.
         if required_responses:
             if not isinstance(required_responses, list):
                 required_responses = [required_responses]
+            else:
+                required_responses = list(required_responses)
             if len(required_responses) == 0:
-                required_responses = None;
+                required_responses = None
 
-        # make sure required_responses is either None or a list
+        # same for avoided_responses
         if avoided_responses:
             if not isinstance(avoided_responses, list):
                 avoided_responses = [avoided_responses]
+            else:
+                avoided_responses = list(avoided_responses)
             if len(avoided_responses) == 0:
-                avoided_responses = None;
+                avoided_responses = None
 
         # clear out any old traces
         if (not use_backlog):
@@ -520,13 +536,20 @@ class DeviceCommsBase(ABC):
                     # any then just return
                     if (required_responses and len(required_responses)):
 
-                        # if we found a required response, remove it from the list
-                        for resp in required_responses:
+                        # iterate over a SNAPSHOT: matched entries are
+                        # removed as we go, and removing from the list
+                        # being iterated used to skip the entry after
+                        # every match
+                        for resp in list(required_responses):
 
-                            regex_match_obj = re.search(resp, line, re.IGNORECASE)
-                            regex_search_string = resp
+                            match_attempt = re.search(resp, line, re.IGNORECASE)
 
-                            if regex_match_obj is not None:
+                            if match_attempt is not None:
+
+                                # latch match metadata only on a hit, so a
+                                # later non-matching pattern cannot wipe it
+                                regex_match_obj = match_attempt
+                                regex_search_string = resp
 
                                 required_responses.remove(resp)
                                 matched_something = True
@@ -549,14 +572,18 @@ class DeviceCommsBase(ABC):
                         break
 
                     if (avoided_responses and len(avoided_responses)):
-                        # if we found a required response, remove it from the list
                         for resp in avoided_responses:
 
-                            regex_match_obj = re.search(resp, line, re.IGNORECASE)
-                            regex_search_string = resp
+                            avoid_match = re.search(resp, line, re.IGNORECASE)
 
-                            # if this line matches one from then we failed
-                            if regex_match_obj is not None:
+                            # if this line matches an avoided response then
+                            # we failed. only latch the match metadata on an
+                            # actual hit - unconditionally assigning here
+                            # used to wipe the metadata of a required match
+                            # found on this same line
+                            if avoid_match is not None:
+                                regex_match_obj = avoid_match
+                                regex_search_string = resp
                                 logger.debug("found response to avoid [" + line + "]")
                                 # no need to look at any more data
                                 stop_processing = True

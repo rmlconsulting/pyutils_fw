@@ -34,7 +34,6 @@ import subprocess
 import re
 import time
 import signal
-import psutil
 
 # Create a logging object with a null handler. if the caller of this class
 # does not configure a logger context then no messages will be printed.
@@ -119,6 +118,16 @@ class RunProcess():
 
     def __kill_child_processes(self, parent_pid, sig=signal.SIGTERM):
         """ send the sigterm to the parent_pid and all subprocesses """
+
+        # psutil is an optional dependency: only this cleanup path needs it
+        try:
+            import psutil
+        except ImportError as e:
+            raise RuntimeError(
+                "psutil is required to clean up child processes. "
+                "Install it with: pip install pyutils-fw[process]"
+            ) from e
+
         try:
             parent = psutil.Process(parent_pid)
         except psutil.NoSuchProcess:
