@@ -162,10 +162,7 @@ class NumatoDevice(RelayBase):
         mask = 0
         logger.debug("on chan: " + str(on_channels))
 
-        # sort the list
-        on_channels.sort()
-
-        for i in on_channels:
+        for i in sorted(on_channels):
             # if we're given an index that is outside of the bounds of the
             # mask then return
             if (i >= max_channels):
@@ -217,7 +214,7 @@ class NumatoDevice(RelayBase):
 
         return mask_chars
 
-    def writeall(self, channel_node = NumatoNode.relay, on_channels = []):
+    def writeall(self, channel_node = NumatoNode.relay, on_channels = None):
         """
         channel_node - one of 'relay', 'gpio'
         on channels - list of integer channels that should be enabled. start counting at 0
@@ -226,6 +223,9 @@ class NumatoDevice(RelayBase):
 
         if not isinstance(channel_node, NumatoNode):
             raise Exception("Invalid channel node")
+
+        # copy: never mutate the caller's list (and no shared mutable default)
+        on_channels = [] if on_channels is None else list(on_channels)
 
         max_channels = self._get_max_channels_for_channel_node(channel_node)
 
@@ -319,11 +319,10 @@ class NumatoDevice(RelayBase):
 
         is_set = None
 
-        max_channels = self._get_max_channels_for_channel_node(channel_node)
-
-        channel = self._map_channel_num_to_alpha(channel_number, max_channels)
-
-        response = self.read(channel_node, channel)
+        # pass the raw channel number through: read() performs the
+        # number-to-alpha mapping itself. mapping here as well double-mapped
+        # the channel and broke every channel >= 10 (the autodiscovery path)
+        response = self.read(channel_node, channel_number)
 
         # map response to logical boolean
         if (response == '1' or response == 'on'):
@@ -367,38 +366,45 @@ class NumatoDevice(RelayBase):
         self.clear(NumatoNode.relay, relay_index)
         self._relay_status[ relay_index ] = 0
 
-    """
-    def write_all_relays(self, activated_relays):
-        self.writeall( channel_node = NumatoNode.relay,
-                       on_channels = activated_relays )
-
-        # keep _relay_status up to date
-        for i in range(0, self.num_relays):
-            if i in activated_relays:
-                self._relay_status[i] = 1
-            else:
-                self._relay_status[i] = 0
-
-    """
-    def read_all_relays(self):
+    def read_relay(self, relay_index):
         """
-        Convenience function
+        Hardware read of a single relay. Returns 1 (on) or 0 (off).
+        Used by RelayBase.read_all_relays(force=True) to resync the
+        state cache from the device.
         """
-        return self.readall( channel_node = NumatoNode.relay )
+        state = self.is_set(NumatoNode.relay, relay_index)
+
+        if state is None:
+            raise Exception(f"could not read relay {relay_index} state from device")
+
+        return 1 if state else 0
+
+    def close(self):
+        """
+        Close the serial port. Idempotent. Relays keep their current
+        state; call deactivate_all() first to return them to rest.
+        """
+        ser = getattr(self, "serial", None)
+        if ser is not None and getattr(ser, "is_open", True):
+            try:
+                ser.close()
+            except Exception:
+                logger.exception("error closing serial port")
+        super().close()
 
     def set_iodir(self, channel_node, input_channels):
 
         # create a mask value with 1's corresponding to input channels
-        mask_value = self.device._create_mask_from_channel_num_list(input_channels, self.num_gpio)
+        mask_value = self._create_mask_from_channel_num_list(input_channels, self.num_gpio)
 
         # determine how many chars to print based on the max number of channels
-        mask_chars = self.device._determine_mask_width_from_num_channels(self.num_gpio)
+        mask_chars = self._determine_mask_width_from_max_channels(self.num_gpio)
 
         # create the actual mask to send to the numato board. it's very particular
         mask = ('{:' + mask_chars + 'x}').format(mask_value)
 
         #actually execute the cmd
-        return self.device._execute_serial_cmd(channel_node.name + ' iodir ' + mask)
+        return self._execute_serial_cmd(channel_node.name + ' iodir ' + mask)
 
     def setmask(self, channel_node, mask):
 
@@ -407,7 +413,7 @@ class NumatoDevice(RelayBase):
 
         max_channels = self._get_max_channels_for_channel_node(channel_node)
 
-        if (len(mask) * NumatoDevice.CHANNELS_PER_HEX_CHAR > max_channel):
+        if (len(mask) * NumatoDevice.CHANNELS_PER_HEX_CHAR > max_channels):
             raise Exception("mask is greater than available channels")
 
         value = self._execute_serial_cmd(channel_node.name + ' iomask ' + mask)

@@ -26,6 +26,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ################################################################################
 
+# DEPRECATED / NON-FUNCTIONAL: this driver predates RelayBase and was never
+# updated - it does not inherit from RelayBase (so its super().__init__ call
+# raises TypeError at construction), among other defects. Kept for reference
+# only; see KNOWN-ISSUES.md at the repository root. Do not use.
+
 import threading
 import os
 import re

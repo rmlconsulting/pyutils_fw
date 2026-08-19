@@ -1,4 +1,9 @@
+# PEP 604 unions ("int | None") appear in signatures below; the future
+# import keeps them working on Python 3.9.
+from __future__ import annotations
+
 import os
+import time
 from abc import ABC, abstractmethod
 import threading
 import logging
@@ -70,8 +75,10 @@ class RelayBase(ABC):
     group constraints defined in `relay_groups`.
     """
 
-    def __init__(self, num_relays, supports_autosense: bool = False, relay_groups: dict = {}, seq_delay_ms: int = 0):
-        self._relay_groups = relay_groups
+    def __init__(self, num_relays, supports_autosense: bool = False, relay_groups: dict | None = None, seq_delay_ms: int = 0):
+        # tolerate None (subclasses default to it) and avoid a shared
+        # mutable default argument
+        self._relay_groups = relay_groups if relay_groups else {}
         self._relay_to_group = {}
         self._group_members = {}
 
@@ -84,12 +91,21 @@ class RelayBase(ABC):
         self.num_relays = num_relays
         self._lock = SeqGuard(seq_delay_ms)
         self._relay_status = {}
+        self._closed = False
 
         self._flush_buffers()
-        self.write_all_relays([])
 
-        for i in range(num_relays):
+        # ask the hardware what is present, if the subclass supports it.
+        # autosense_hardware() may update self.num_relays (and any
+        # board-specific counts) before the state cache is seeded below.
+        if supports_autosense:
+            self.autosense_hardware()
+
+        for i in range(self.num_relays):
             self._relay_status[i] = 0
+
+        # bring the board to a known state: everything off
+        self.write_all_relays([])
 
     def _group_of(self, relay_index: int):
         return self._relay_to_group.get(relay_index)
@@ -148,7 +164,7 @@ class RelayBase(ABC):
         changes = len(adds) + len(removes)
 
         if changes == 0:
-            logger.debug("Relay: no changes")
+            LOGGER.debug("Relay: no changes")
             return
 
         if changes == 1:
@@ -203,11 +219,12 @@ class RelayBase(ABC):
         relays = list(relays)
 
         def cb():
-            with self._lock:
-                try:
-                    self.deactivate_relay(relay_list=relays)
-                except Exception:
-                    pass
+            # deactivate_relay acquires self._lock internally; taking it
+            # here as well self-deadlocked (SeqGuard is not reentrant)
+            try:
+                self.deactivate_relay(relay_list=relays)
+            except Exception:
+                LOGGER.exception("auto-off deactivate failed for relays %s", relays)
 
         t = threading.Timer(delay_ms / 1000.0, cb)
         t.daemon = True
@@ -253,8 +270,9 @@ class RelayBase(ABC):
 
         if auto_off_ms and auto_off_ms > 0:
             if blocking:
-                time.sleep(auto_off_ms)
-                self.deactivate_relay(relay_list=relays)
+                # auto_off_ms is milliseconds; time.sleep takes seconds
+                time.sleep(auto_off_ms / 1000.0)
+                self.deactivate_relay(relay_list=targets)
             else:
                 self._schedule_auto_off(auto_off_ms, targets)
 
@@ -417,4 +435,32 @@ class RelayBase(ABC):
         if relay_index >= self.num_relays:
             raise Exception(f"relay board only has {self.num_relays} relays")
         return self._relay_status[relay_index] == 1
+
+    def deactivate_all(self) -> None:
+        """
+        Return every relay to its inactive state.
+
+        This is the explicit replacement for the old __del__-based reset:
+        destructor ordering at interpreter shutdown made that unsafe, so
+        resetting the board is something you ask for, never a side effect
+        of garbage collection.
+        """
+        self.write_all_relays([])
+
+    def close(self) -> None:
+        """
+        Release the underlying transport (subclasses close their serial
+        port here, then call super().close()). Idempotent.
+
+        Relays are left in their current state; call deactivate_all()
+        first if you want them returned to rest.
+        """
+        self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
 
