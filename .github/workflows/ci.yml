@@ -15,12 +15,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.12"]
         exclude:
-          # macos-latest runners are arm64 and have no CPython 3.9 build;
-          # the include below covers 3.9 on Intel macOS instead
+          # no hosted runner can execute CPython 3.9 on macOS: setup-python
+          # only ships darwin-x64 builds of 3.9 (never arm64), today's
+          # macos-* runners are all arm64, and the last Intel runner
+          # (macos-13) is retired. The 3.9 floor is proven on Linux and
+          # Windows here, and macOS itself runs 3.12.
           - os: macos-latest
-            python-version: "3.9"
-        include:
-          - os: macos-13
             python-version: "3.9"
     steps:
       - uses: actions/checkout@v4
